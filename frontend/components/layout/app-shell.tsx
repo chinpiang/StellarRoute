@@ -8,6 +8,7 @@ import { Footer } from './footer';
 import { cn } from '@/lib/utils';
 import { SessionRecoveryModal } from '@/components/modals/SessionRecoveryModal';
 import { useSessionRecoveryContext } from '@/components/providers/session-recovery-provider';
+import { WalletSyncBanner } from '@/components/shared';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -55,6 +56,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
+      <WalletSyncBanner />
 
       <main
         className={cn(
