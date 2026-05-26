@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { TransactionStatus } from '@/types/transaction';
 import type { TradeParams } from '@/hooks/useTransactionLifecycle';
+import { PostSwapSuccessScreen } from './PostSwapSuccessScreen';
 
 export interface TransactionConfirmationModalProps {
   isOpen: boolean;
@@ -49,7 +50,8 @@ const STATUS_CONFIG = {
     iconClass: 'text-amber-500 animate-spin',
     bgClass: 'bg-amber-500/10',
     heading: 'Waiting for wallet\u2026',
-    description: 'Waiting for wallet signature. Please approve the transaction in your wallet.',
+    description:
+      'Waiting for wallet signature. Please approve the transaction in your wallet.',
     announcement: 'Waiting for wallet signature.',
   },
   submitted: {
@@ -73,7 +75,8 @@ const STATUS_CONFIG = {
     iconClass: 'text-destructive',
     bgClass: 'bg-destructive/10',
     heading: 'Swap failed',
-    description: 'The swap could not be completed. You can try again or dismiss.',
+    description:
+      'The swap could not be completed. You can try again or dismiss.',
     announcement: 'Swap failed.',
   },
   dropped: {
@@ -81,12 +84,16 @@ const STATUS_CONFIG = {
     iconClass: 'text-muted-foreground',
     bgClass: 'bg-muted/20',
     heading: 'Transaction timed out',
-    description: 'The transaction was not confirmed within the deadline. You can resubmit or dismiss.',
+    description:
+      'The transaction was not confirmed within the deadline. You can resubmit or dismiss.',
     announcement: 'Transaction timed out.',
   },
 } as const;
 
-const IN_FLIGHT_STATUSES: Array<TransactionStatus | 'review'> = ['pending', 'submitted'];
+const IN_FLIGHT_STATUSES: Array<TransactionStatus | 'review'> = [
+  'pending',
+  'submitted',
+];
 
 export function TransactionConfirmationModal({
   isOpen,
@@ -181,11 +188,9 @@ export function TransactionConfirmationModal({
             </div>
           )}
 
-          {/* Confirmed: show tx hash */}
+          {/* Confirmed: dedicated post-swap success content */}
           {status === 'confirmed' && txHash && (
-            <p className="text-center text-xs text-muted-foreground break-all">
-              Tx: {txHash}
-            </p>
+            <PostSwapSuccessScreen txHash={txHash} />
           )}
         </div>
 

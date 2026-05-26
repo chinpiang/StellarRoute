@@ -7,7 +7,7 @@ import { ArrowUpDown, RefreshCw } from 'lucide-react';
 import { AmountInput } from './AmountInput';
 import { TokenSelector } from './TokenSelector';
 import { PriceInfoPanel } from './PriceInfoPanel';
-import { RouteDisplay } from './RouteDisplay';
+import RouteDisplay from './RoutePanelAsync';
 import type { AlternativeRoute } from './RouteDisplay';
 import { SwapButton, SwapButtonState } from './SwapButton';
 import { SettingsPanel } from '../settings/SettingsPanel';
@@ -36,16 +36,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 
 export function SwapCard() {
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
   // Wrap useSearchParams in try-catch for SSR
-  let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null = null;
+  let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null =
+    null;
   let isSharedQuoteStale = false;
-  let refreshSharedQuote: ReturnType<typeof useShareableQuote>['refreshQuote'] | null = null;
-  
+  let refreshSharedQuote:
+    | ReturnType<typeof useShareableQuote>['refreshQuote']
+    | null = null;
+
   try {
     const shareableQuote = useShareableQuote();
     parseParams = shareableQuote.parseParams;
@@ -54,7 +57,7 @@ export function SwapCard() {
   } catch (e) {
     // SSR or missing searchParams context
   }
-  
+
   const {
     fromToken,
     setFromToken,
@@ -81,10 +84,16 @@ export function SwapCard() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedRoute, setSelectedRoute] = useState<AlternativeRoute | null>(null);
-  const [wakeSnapshot, setWakeSnapshot] = useState<TradeFormSnapshot | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<AlternativeRoute | null>(
+    null
+  );
+  const [wakeSnapshot, setWakeSnapshot] = useState<TradeFormSnapshot | null>(
+    null
+  );
   const [wakeRecoveryOpen, setWakeRecoveryOpen] = useState(false);
-  const [recoveryRequestedAt, setRecoveryRequestedAt] = useState<number | null>(null);
+  const [recoveryRequestedAt, setRecoveryRequestedAt] = useState<number | null>(
+    null
+  );
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -95,8 +104,7 @@ export function SwapCard() {
       ? 'refresh'
       : null;
   const requiresFreshQuote =
-    recoveryRequestedAt !== null &&
-    (quote.loading || quote.isStale);
+    recoveryRequestedAt !== null && (quote.loading || quote.isStale);
 
   // Connection status indicator
   const { isOnline } = useOnlineStatus();
@@ -112,27 +120,29 @@ export function SwapCard() {
       setToToken,
       setFromAmount,
       setSlippage,
-      setSelectedRoute: (id) => setSelectedRoute(id ? { id, venue: '', expectedAmount: '' } : null),
+      setSelectedRoute: (id) =>
+        setSelectedRoute(id ? { id, venue: '', expectedAmount: '' } : null),
       refreshQuote: quote.refresh,
     },
   });
 
   // Mock balance
-  const fromBalance = "100.00";
+  const fromBalance = '100.00';
   const fromSymbol = fromToken === 'native' ? 'XLM' : fromToken.split(':')[0];
   const toSymbol = toToken === 'native' ? 'XLM' : toToken.split(':')[0];
 
   const buttonState = useMemo<SwapButtonState>(() => {
-    if (optimistic.submitLock) return "executing";
-    if (!isConnected) return "no_wallet";
-    if (!fromAmount || parseFloat(fromAmount) === 0) return "no_amount";
-    if (quote.error) return "error";
-    if (requiresFreshQuote) return "refreshing_quote";
-    if (parseFloat(fromAmount) > parseFloat(fromBalance)) return "insufficient_balance";
-    if (quote.priceImpact > 10) return "high_impact_warning";
-    if (quote.loading) return "refreshing_quote";
-    if (quote.isStale) return "error";
-    return "ready";
+    if (optimistic.submitLock) return 'executing';
+    if (!isConnected) return 'no_wallet';
+    if (!fromAmount || parseFloat(fromAmount) === 0) return 'no_amount';
+    if (quote.error) return 'error';
+    if (requiresFreshQuote) return 'refreshing_quote';
+    if (parseFloat(fromAmount) > parseFloat(fromBalance))
+      return 'insufficient_balance';
+    if (quote.priceImpact > 10) return 'high_impact_warning';
+    if (quote.loading) return 'refreshing_quote';
+    if (quote.isStale) return 'error';
+    return 'ready';
   }, [
     fromAmount,
     fromBalance,
@@ -235,7 +245,18 @@ export function SwapCard() {
       walletAddress: 'mock_wallet_address',
       snapshot: snap,
     });
-  }, [fromToken, toToken, fromAmount, slippage, selectedRoute, toAmount, formattedRate, quote, toSymbol, optimistic]);
+  }, [
+    fromToken,
+    toToken,
+    fromAmount,
+    slippage,
+    selectedRoute,
+    toAmount,
+    formattedRate,
+    quote,
+    toSymbol,
+    optimistic,
+  ]);
 
   const handleSwap = useCallback(() => {
     if (quote.priceImpact > 5) {
@@ -249,15 +270,18 @@ export function SwapCard() {
     setFromAmount(fromBalance);
   }, [fromBalance, setFromAmount]);
 
-  const handlePresetSelect = useCallback((percentage: number) => {
-    const balanceNum = parseFloat(fromBalance);
-    if (isNaN(balanceNum) || balanceNum === 0) return;
-    
-    const amount = balanceNum * percentage;
-    // Round to 7 decimals to respect asset precision
-    const rounded = Math.floor(amount * 10000000) / 10000000;
-    setFromAmount(rounded.toString());
-  }, [fromBalance, setFromAmount]);
+  const handlePresetSelect = useCallback(
+    (percentage: number) => {
+      const balanceNum = parseFloat(fromBalance);
+      if (isNaN(balanceNum) || balanceNum === 0) return;
+
+      const amount = balanceNum * percentage;
+      // Round to 7 decimals to respect asset precision
+      const rounded = Math.floor(amount * 10000000) / 10000000;
+      setFromAmount(rounded.toString());
+    },
+    [fromBalance, setFromAmount]
+  );
 
   const handleSwitchTokens = useCallback(() => {
     setSelectedRoute(null);
@@ -268,35 +292,39 @@ export function SwapCard() {
     const onKeydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditable = target
-        ? target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
+        ? target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
           target.isContentEditable
         : false;
 
-      if (event.key === "?" && !isEditable) {
+      if (event.key === '?' && !isEditable) {
         event.preventDefault();
         lastFocusedElementRef.current = document.activeElement as HTMLElement;
         setShortcutHelpOpen(true);
       }
 
-      if (event.key.toLowerCase() === "r" && event.altKey) {
+      if (event.key.toLowerCase() === 'r' && event.altKey) {
         event.preventDefault();
         quote.refresh();
       }
 
-      if (event.key === "1" && event.altKey) {
+      if (event.key === '1' && event.altKey) {
         event.preventDefault();
-        document.querySelectorAll<HTMLInputElement>('input[placeholder="0.00"]')[0]?.focus();
+        document
+          .querySelectorAll<HTMLInputElement>('input[placeholder="0.00"]')[0]
+          ?.focus();
       }
 
-      if (event.key === "2" && event.altKey) {
+      if (event.key === '2' && event.altKey) {
         event.preventDefault();
-        document.querySelectorAll<HTMLInputElement>('input[placeholder="0.00"]')[1]?.focus();
+        document
+          .querySelectorAll<HTMLInputElement>('input[placeholder="0.00"]')[1]
+          ?.focus();
       }
     };
 
-    window.addEventListener("keydown", onKeydown);
-    return () => window.removeEventListener("keydown", onKeydown);
+    window.addEventListener('keydown', onKeydown);
+    return () => window.removeEventListener('keydown', onKeydown);
   }, [quote]);
 
   const handleShortcutOpenChange = useCallback((open: boolean) => {
@@ -306,48 +334,69 @@ export function SwapCard() {
     }
   }, []);
 
-  const handleExport = useCallback((format: "json" | "csv") => {
-    const payload: QuoteExportPayload = {
-      exportedAt: new Date().toISOString(),
-      market: {
-        fromAsset: fromSymbol,
-        toAsset: toSymbol,
-        fromAmount,
-        expectedToAmount: toAmount,
-      },
-      pricing: {
-        rate: formattedRate,
-        priceImpactPct: quote.priceImpact.toFixed(2),
-        minimumReceived: `${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
-        networkFee: quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM',
-      },
-      route: {
-        selectedVenue: selectedRoute?.venue ?? "auto",
-        routeSummary:
-          selectedRoute?.hops?.map((hop) => `${hop.fromAsset}->${hop.toAsset}`).join(" | ") ??
-          "best-route",
-      },
-    };
-    const serialized = format === "json"
-      ? JSON.stringify(payload, null, 2)
-      : quoteExportToCsv(payload);
-    const blob = new Blob([serialized], {
-      type: format === "json" ? "application/json" : "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `stellarroute-quote-summary.${format}`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    toast.success(t("swap.quote.exportSuccess", { format: format.toUpperCase() }));
-  }, [formattedRate, fromAmount, fromSymbol, quote.fee, quote.priceImpact, selectedRoute, slippage, t, toAmount, toSymbol]);
+  const handleExport = useCallback(
+    (format: 'json' | 'csv') => {
+      const payload: QuoteExportPayload = {
+        exportedAt: new Date().toISOString(),
+        market: {
+          fromAsset: fromSymbol,
+          toAsset: toSymbol,
+          fromAmount,
+          expectedToAmount: toAmount,
+        },
+        pricing: {
+          rate: formattedRate,
+          priceImpactPct: quote.priceImpact.toFixed(2),
+          minimumReceived: `${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
+          networkFee: quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM',
+        },
+        route: {
+          selectedVenue: selectedRoute?.venue ?? 'auto',
+          routeSummary:
+            selectedRoute?.hops
+              ?.map((hop) => `${hop.fromAsset}->${hop.toAsset}`)
+              .join(' | ') ?? 'best-route',
+        },
+      };
+      const serialized =
+        format === 'json'
+          ? JSON.stringify(payload, null, 2)
+          : quoteExportToCsv(payload);
+      const blob = new Blob([serialized], {
+        type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `stellarroute-quote-summary.${format}`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(
+        t('swap.quote.exportSuccess', { format: format.toUpperCase() })
+      );
+    },
+    [
+      formattedRate,
+      fromAmount,
+      fromSymbol,
+      quote.fee,
+      quote.priceImpact,
+      selectedRoute,
+      slippage,
+      t,
+      toAmount,
+      toSymbol,
+    ]
+  );
 
   return (
-    <div data-testid="swap-card" className="w-full max-w-[480px] mx-auto perspective-1000">
+    <div
+      data-testid="swap-card"
+      className="w-full max-w-[480px] mx-auto perspective-1000"
+    >
       {/* Network Mismatch Banner */}
       <NetworkMismatchBanner className="mb-4" />
-      
+
       {/* Shared Quote Stale Warning */}
       {isSharedQuoteStale && refreshSharedQuote && (
         <div className="mb-4 p-3 rounded-xl border border-amber-500/50 bg-amber-500/10">
@@ -364,34 +413,38 @@ export function SwapCard() {
           </Button>
         </div>
       )}
-      
-      <Card className={cn(
-        "relative overflow-hidden border-border/40 bg-background/60 backdrop-blur-xl shadow-2xl rounded-[32px] transition-all duration-500 hover:shadow-primary/5",
-        isCompact && "rounded-2xl"
-      )}>
+
+      <Card
+        className={cn(
+          'relative overflow-hidden border-border/40 bg-background/60 backdrop-blur-xl shadow-2xl rounded-[32px] transition-all duration-500 hover:shadow-primary/5',
+          isCompact && 'rounded-2xl'
+        )}
+      >
         {/* Animated Background Gradients */}
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl animate-pulse" />
         <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-700" />
-        
-        <CardContent className={cn(
-          "space-y-4",
-          isCompact ? "p-4" : "p-6"
-        )}>
+
+        <CardContent className={cn('space-y-4', isCompact ? 'p-4' : 'p-6')}>
           {/* Header */}
           <div className="flex items-center justify-between mb-2">
-            <h2 className={cn(
-              "font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent",
-              isCompact ? "text-lg" : "text-xl"
-            )}>
+            <h2
+              className={cn(
+                'font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent',
+                isCompact ? 'text-lg' : 'text-xl'
+              )}
+            >
               Swap
             </h2>
             <div className="flex items-center gap-1">
-              <QuoteStreamStatusIndicator status={streamStatus} mode={streamMode} />
+              <QuoteStreamStatusIndicator
+                status={streamStatus}
+                mode={streamMode}
+              />
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={toggleCompact}
-                aria-label={isCompact ? "Expand layout" : "Compact layout"}
+                aria-label={isCompact ? 'Expand layout' : 'Compact layout'}
                 className="h-9 w-9 rounded-xl hover:bg-muted/80"
               >
                 {isCompact ? (
@@ -406,32 +459,39 @@ export function SwapCard() {
                 deadline={deadline}
                 onDeadlineChange={setDeadline}
                 onReset={() => {
-      reset();
-      setSelectedRoute(null);
-    }}
+                  reset();
+                  setSelectedRoute(null);
+                }}
               />
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => quote.refresh()} 
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => quote.refresh()}
                 disabled={quote.loading}
-                aria-label={t("swap.card.refreshQuote")}
+                aria-label={t('swap.card.refreshQuote')}
                 className="h-9 w-9 rounded-xl hover:bg-muted/80"
               >
-                <RefreshCw className={cn("h-4.5 w-4.5 text-muted-foreground", quote.loading && "animate-spin")} />
+                <RefreshCw
+                  className={cn(
+                    'h-4.5 w-4.5 text-muted-foreground',
+                    quote.loading && 'animate-spin'
+                  )}
+                />
               </Button>
             </div>
           </div>
 
           {/* Pay Section */}
-          <div className={cn("space-y-2 group", isCompact && "space-y-1")}>
-            <div className={cn(
-              "bg-muted/30 hover:bg-muted/40 transition-colors rounded-2xl border border-border/20 focus-within:border-primary/30 focus-within:ring-4 focus-within:ring-primary/5",
-              isCompact ? "p-3 rounded-xl" : "p-4"
-            )}>
+          <div className={cn('space-y-2 group', isCompact && 'space-y-1')}>
+            <div
+              className={cn(
+                'bg-muted/30 hover:bg-muted/40 transition-colors rounded-2xl border border-border/20 focus-within:border-primary/30 focus-within:ring-4 focus-within:ring-primary/5',
+                isCompact ? 'p-3 rounded-xl' : 'p-4'
+              )}
+            >
               <div className="flex justify-between items-start mb-1">
                 <AmountInput
-                  label={t("swap.pair.youPay")}
+                  label={t('swap.pair.youPay')}
                   value={fromAmount}
                   onChange={setFromAmount}
                   onMax={handleMax}
@@ -462,14 +522,16 @@ export function SwapCard() {
           </div>
 
           {/* Receive Section */}
-          <div className={cn("space-y-2", isCompact && "space-y-1")}>
-            <div className={cn(
-              "bg-muted/30 rounded-2xl border border-border/20",
-              isCompact ? "p-3 rounded-xl" : "p-4"
-            )}>
+          <div className={cn('space-y-2', isCompact && 'space-y-1')}>
+            <div
+              className={cn(
+                'bg-muted/30 rounded-2xl border border-border/20',
+                isCompact ? 'p-3 rounded-xl' : 'p-4'
+              )}
+            >
               <div className="flex justify-between items-start mb-1">
                 <AmountInput
-                  label={t("swap.pair.youReceive")}
+                  label={t('swap.pair.youReceive')}
                   value={selectedRoute?.expectedAmount ?? toAmount}
                   readOnly
                   placeholder="0.00"
@@ -487,18 +549,22 @@ export function SwapCard() {
 
           {/* Info Panels (Conditional) */}
           {parseFloat(fromAmount) > 0 && (
-            <div className={cn(
-              "space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500",
-              isCompact ? "space-y-2 pt-1" : "pt-2"
-            )}>
+            <div
+              className={cn(
+                'space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500',
+                isCompact ? 'space-y-2 pt-1' : 'pt-2'
+              )}
+            >
               <PriceInfoPanel
                 rate={formattedRate}
                 priceImpact={quote.priceImpact}
                 minReceived={`${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
-                networkFee={quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM'}
+                networkFee={
+                  quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM'
+                }
                 isLoading={quote.loading}
-                onExportJson={() => handleExport("json")}
-                onExportCsv={() => handleExport("csv")}
+                onExportJson={() => handleExport('json')}
+                onExportCsv={() => handleExport('csv')}
               />
               <RouteDisplay
                 amountOut={selectedRoute?.expectedAmount ?? toAmount}
@@ -526,7 +592,7 @@ export function SwapCard() {
               data-testid="stale-indicator"
               className="text-xs text-amber-500 font-medium"
             >
-              {t("swap.card.outdated")}
+              {t('swap.card.outdated')}
             </span>
           )}
           {quote.isRecovering && (
@@ -536,10 +602,13 @@ export function SwapCard() {
             >
               <span className="text-xs text-blue-500 font-medium">
                 {quote.hasPendingRetry
-                  ? t("swap.card.recoveringQuoteCountdown", {
-                      seconds: Math.max(1, Math.ceil(quote.pendingRetryRemainingMs / 1000)),
+                  ? t('swap.card.recoveringQuoteCountdown', {
+                      seconds: Math.max(
+                        1,
+                        Math.ceil(quote.pendingRetryRemainingMs / 1000)
+                      ),
                     })
-                  : t("swap.card.recoveringQuote")}
+                  : t('swap.card.recoveringQuote')}
               </span>
               {quote.hasPendingRetry && (
                 <Button
@@ -549,7 +618,7 @@ export function SwapCard() {
                   onClick={quote.cancelRetry}
                   className="h-7 rounded-lg px-2 text-[11px] font-semibold text-blue-600 hover:bg-blue-500/10 hover:text-blue-700"
                 >
-                  {t("swap.card.cancelRetry")}
+                  {t('swap.card.cancelRetry')}
                 </Button>
               )}
             </div>
@@ -560,7 +629,7 @@ export function SwapCard() {
               data-testid="recovery-refresh-indicator"
               className="text-xs font-medium text-primary"
             >
-              {t("swap.card.sessionRestored")}
+              {t('swap.card.sessionRestored')}
             </span>
           )}
 
@@ -609,20 +678,35 @@ export function SwapCard() {
 
       {/* Footer Info */}
       <p className="text-center text-[10px] text-muted-foreground/60 mt-4 px-8 uppercase tracking-widest font-bold">
-        {t("swap.card.poweredBy")}
+        {t('swap.card.poweredBy')}
       </p>
 
       <Dialog open={shortcutHelpOpen} onOpenChange={handleShortcutOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("swap.shortcuts.title")}</DialogTitle>
+            <DialogTitle>{t('swap.shortcuts.title')}</DialogTitle>
           </DialogHeader>
           <ul className="space-y-3 text-sm">
-            <li className="flex justify-between"><span>{t("swap.shortcuts.openHelp")}</span><kbd className="font-mono">?</kbd></li>
-            <li className="flex justify-between"><span>{t("swap.shortcuts.closeHelp")}</span><kbd className="font-mono">Esc</kbd></li>
-            <li className="flex justify-between"><span>{t("swap.shortcuts.refreshQuote")}</span><kbd className="font-mono">Alt+R</kbd></li>
-            <li className="flex justify-between"><span>{t("swap.shortcuts.focusPayAmount")}</span><kbd className="font-mono">Alt+1</kbd></li>
-            <li className="flex justify-between"><span>{t("swap.shortcuts.focusReceiveAmount")}</span><kbd className="font-mono">Alt+2</kbd></li>
+            <li className="flex justify-between">
+              <span>{t('swap.shortcuts.openHelp')}</span>
+              <kbd className="font-mono">?</kbd>
+            </li>
+            <li className="flex justify-between">
+              <span>{t('swap.shortcuts.closeHelp')}</span>
+              <kbd className="font-mono">Esc</kbd>
+            </li>
+            <li className="flex justify-between">
+              <span>{t('swap.shortcuts.refreshQuote')}</span>
+              <kbd className="font-mono">Alt+R</kbd>
+            </li>
+            <li className="flex justify-between">
+              <span>{t('swap.shortcuts.focusPayAmount')}</span>
+              <kbd className="font-mono">Alt+1</kbd>
+            </li>
+            <li className="flex justify-between">
+              <span>{t('swap.shortcuts.focusReceiveAmount')}</span>
+              <kbd className="font-mono">Alt+2</kbd>
+            </li>
           </ul>
         </DialogContent>
       </Dialog>
