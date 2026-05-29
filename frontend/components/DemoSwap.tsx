@@ -17,6 +17,7 @@ import { TradeRouteDisplay } from "@/components/shared/TradeRouteDisplay";
 import { usePairs } from "@/hooks/useApi";
 import { useQuoteRefresh } from "@/hooks/useQuoteRefresh";
 import { useTransactionHistory } from "@/hooks/useTransactionHistory";
+import { useSwapUrlParams } from "@/hooks/useSwapUrlParams";
 import { useWallet } from "@/components/providers/wallet-provider";
 import { useSettings } from "@/components/providers/settings-provider";
 import { TransactionStatus } from "@/types/transaction";
@@ -72,6 +73,7 @@ export function DemoSwap() {
   const { data: pairs, loading: pairsLoading, error: pairsError } = usePairs();
   const { isConnected, stubSpendableBalance } = useWallet();
   const { settings } = useSettings();
+  const urlParams = useSwapUrlParams();
 
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [sellRaw, setSellRaw] = useState<string>("");
@@ -86,15 +88,34 @@ export function DemoSwap() {
 
   const { addTransaction } = useTransactionHistory(MOCK_WALLET);
 
+  // Handle URL parameter initialization
   useEffect(() => {
     if (!pairs?.length) return;
-    setSelectedKey((current: string) => {
-      if (current && pairs.some((p) => pairKey(p) === current)) {
-        return current;
+    
+    // If URL has base and quote parameters, find matching pair
+    if (urlParams.base && urlParams.quote) {
+      const matchingPair = pairs.find(
+        (p) =>
+          p.base_asset === urlParams.base &&
+          p.counter_asset === urlParams.quote
+      );
+      if (matchingPair) {
+        setSelectedKey(pairKey(matchingPair));
+        // Set amount if provided in URL
+        if (urlParams.amount) {
+          setSellRaw(urlParams.amount);
+        }
       }
-      return pairKey(pairs[0]);
-    });
-  }, [pairs]);
+    } else {
+      // Default to first pair if none specified
+      setSelectedKey((current: string) => {
+        if (current && pairs.some((p) => pairKey(p) === current)) {
+          return current;
+        }
+        return pairKey(pairs[0]);
+      });
+    }
+  }, [pairs, urlParams.base, urlParams.quote, urlParams.amount]);
 
   const selectedPair = useMemo(
     () => pairs?.find((p) => pairKey(p) === selectedKey) ?? null,

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ActivityTableSkeleton } from "@/components/shared/ActivityTableSkeleton"
 import { CopyButton } from "@/components/shared/CopyButton"
+import { ViewState } from "@/components/shared/ViewState"
 import { useTransactionHistory } from "@/hooks/useTransactionHistory"
 import { useVirtualWindow } from "@/hooks/useVirtualWindow"
 import { TransactionRecord } from "@/types/transaction"
@@ -122,14 +123,17 @@ export function TransactionHistory() {
         {isLoading ? (
           <ActivityTableSkeleton />
         ) : sortedTxs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center h-full">
-            <div className="text-muted-foreground w-16 h-16 mb-4 opacity-50 bg-muted rounded-full flex items-center justify-center">
-              <span className="text-2xl">📋</span>
-            </div>
-            <h3 className="text-xl font-semibold mb-1">No Transactions Found</h3>
-            <p className="text-sm text-muted-foreground max-w-[250px]">
-              You haven&apos;t made any swaps yet, or your filters are too restrictive.
-            </p>
+          <div className="flex items-center justify-center h-full p-6">
+            <ViewState
+              variant="empty"
+              title="No transactions yet"
+              description="You haven't made any swaps. Head to the Swap page to get started."
+              action={
+                <Button onClick={() => window.location.href = '/'} variant="default">
+                  Make your first swap
+                </Button>
+              }
+            />
           </div>
         ) : (
           <div className="min-w-[720px]">

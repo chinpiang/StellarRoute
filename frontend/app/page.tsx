@@ -1,5 +1,16 @@
 import DemoSwap from "@/components/DemoSwap";
 
+/**
+ * Home/Swap page with deep-linking support
+ * 
+ * Deep-link parameters:
+ * - base: Token to sell (e.g., ?base=XLM)
+ * - quote: Token to buy (e.g., &quote=USDC)
+ * - amount: Amount to sell (e.g., &amount=100.5)
+ * - type: Trade direction "sell" or "buy" (default: sell)
+ * 
+ * Example: /?base=XLM&quote=USDC&amount=100&type=sell
+ */
 export default function Home() {
   return (
     <div className="container mx-auto px-4 py-8">
