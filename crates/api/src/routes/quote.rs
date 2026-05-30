@@ -10,14 +10,14 @@
 //!
 //! Request logs and decision stages include matching `request_id` values.
 
-use axum::{extract::State, response::IntoResponse, Json};
-use serde_json::{Map, Value};
+use axum::{extract::State, Json};
+use opentelemetry::trace::TraceContextExt;
 use sqlx::Row;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, info_span, warn, Instrument};
-use uuid::Uuid;
+use tracing::{debug, info_span, warn, Instrument, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use stellarroute_routing::health::filter::GraphFilter;
 use stellarroute_routing::health::freshness::{FreshnessGuard, FreshnessOutcome};
@@ -880,6 +880,34 @@ type FindBestPriceResult = (
     Option<u32>,                                      // spread_bps
 );
 
+#[derive(Debug, Clone)]
+struct SourceTraceContext {
+    trace_id: String,
+    span_id: String,
+}
+
+impl SourceTraceContext {
+    fn from_parts(trace_id: String, span_id: String) -> Option<Self> {
+        if trace_id.is_empty()
+            || span_id.is_empty()
+            || trace_id == "00000000000000000000000000000000"
+            || span_id == "0000000000000000"
+        {
+            return None;
+        }
+
+        Some(Self { trace_id, span_id })
+    }
+
+    fn to_otel_context(&self) -> Option<opentelemetry::Context> {
+        crate::tracing_config::TraceContext {
+            trace_id: self.trace_id.clone(),
+            span_id: self.span_id.clone(),
+        }
+        .to_otel_context()
+    }
+}
+
 #[tracing::instrument(
     name = "find_best_price",
     skip(state, base_id, quote_id),
@@ -1040,6 +1068,9 @@ async fn find_best_price(
         .iter()
         .filter_map(|&idx| direct_candidates.get(idx).cloned())
         .collect();
+
+    link_source_traces(&candidates);
+
     let fresh_scorer_inputs: Vec<&VenueScorerInput> = freshness_outcome
         .fresh
         .iter()
@@ -1211,6 +1242,16 @@ async fn find_best_price(
     ))
 }
 
+fn link_source_traces(candidates: &[DirectVenueCandidate]) {
+    for candidate in candidates {
+        if let Some(trace_context) = candidate.source_trace_context() {
+            if let Some(otel_context) = trace_context.to_otel_context() {
+                Span::current().add_link(otel_context);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct DirectVenueCandidate {
     venue_type: String,
@@ -1219,8 +1260,8 @@ struct DirectVenueCandidate {
     available_amount: f64,
     price_e7: i64,
     available_amount_e7: i64,
-    fee_bps: u32,
-    is_inverse: bool,
+    source_trace_id: String,
+    source_span_id: String,
 }
 
 impl DirectVenueCandidate {
@@ -1234,6 +1275,10 @@ impl DirectVenueCandidate {
         } else {
             "sdex".to_string()
         }
+    }
+
+    fn source_trace_context(&self) -> Option<SourceTraceContext> {
+        SourceTraceContext::from_parts(self.source_trace_id.clone(), self.source_span_id.clone())
     }
 }
 
@@ -1342,20 +1387,19 @@ async fn fetch_source_candidates(
 ) -> Result<Vec<DirectVenueCandidate>> {
     let rows = sqlx::query(
         r#"
-        select
-            nl.venue_type,
-            nl.venue_ref,
-            nl.price::text as price,
-            nl.available_amount::text as available_amount,
-            nl.price_e7,
-            nl.available_amount_e7,
-            nl.selling_asset_id,
-            coalesce(amm.fee_bps, 0)::integer as fee_bps
-        from normalized_liquidity nl
-        left join amm_pool_reserves amm on nl.venue_type = 'amm' and nl.venue_ref = amm.pool_address
-        where ((selling_asset_id = $1 and buying_asset_id = $2)
-           or (selling_asset_id = $2 and buying_asset_id = $1))
-          and nl.venue_type = $3
+                select
+                    venue_type,
+                    venue_ref,
+                    price::text as price,
+                    available_amount::text as available_amount,
+                    price_e7,
+                                        available_amount_e7,
+                                        coalesce(source_trace_id, '') as source_trace_id,
+                                        coalesce(source_span_id, '') as source_span_id
+                from normalized_liquidity
+        where selling_asset_id = $1
+          and buying_asset_id = $2
+          and venue_type = $3
         "#,
     )
     .bind(base_id)
@@ -1376,9 +1420,8 @@ async fn fetch_source_candidates(
                 .unwrap_or(0.0);
             let price_e7: i64 = row.get("price_e7");
             let available_amount_e7: i64 = row.get("available_amount_e7");
-            let fee_bps: i32 = row.get("fee_bps");
-            let selling_id: uuid::Uuid = row.get("selling_asset_id");
-
+            let source_trace_id: String = row.get("source_trace_id");
+            let source_span_id: String = row.get("source_span_id");
             DirectVenueCandidate {
                 venue_type,
                 venue_ref,
@@ -1386,8 +1429,8 @@ async fn fetch_source_candidates(
                 available_amount,
                 price_e7,
                 available_amount_e7,
-                fee_bps: fee_bps as u32,
-                is_inverse: selling_id == quote_id,
+                source_trace_id,
+                source_span_id,
             }
         })
         .collect())
