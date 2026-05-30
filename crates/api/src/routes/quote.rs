@@ -14,6 +14,7 @@ use axum::{extract::State, Json};
 use opentelemetry::trace::TraceContextExt;
 use sqlx::Row;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, info_span, warn, Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -35,10 +36,43 @@ use crate::{
         request::{AssetPath, QuoteParams},
         AssetInfo, ExcludedVenueInfo as ApiExcludedVenueInfo,
         ExclusionDiagnostics as ApiExclusionDiagnostics, ExclusionReason as ApiExclusionReason,
-        PathStep, PreparedQuoteResponse, QuoteRationaleMetadata, QuoteResponse, VenueEvaluation,
+        PathStep, PreparedQuoteResponse, QuoteExpirationWebhookPayload, QuoteRationaleMetadata,
+        QuoteResponse, VenueEvaluation,
     },
     state::AppState,
 };
+
+fn extract_consumer_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("x-api-key")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("api_key:{value}"))
+}
+
+fn build_quote_webhook_payload(
+    consumer_id: String,
+    base: &str,
+    quote: &str,
+    quote_resp: &QuoteResponse,
+) -> QuoteExpirationWebhookPayload {
+    let quote_id = format!(
+        "{}:{}:{}:{}",
+        base, quote, quote_resp.timestamp, quote_resp.amount
+    );
+
+    QuoteExpirationWebhookPayload {
+        event_id: Uuid::new_v4().to_string(),
+        consumer_id,
+        quote_id,
+        pair: format!("{base}/{quote}"),
+        reason: "ttl_expired".to_string(),
+        expired_at: quote_resp
+            .expires_at
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+    }
+}
 
 /// Get price quote for a trading pair
 ///
@@ -53,6 +87,7 @@ use crate::{
         ("amount" = Option<String>, Query, description = "Amount to trade (default: 1)"),
         ("slippage_bps" = Option<u32>, Query, description = "Slippage tolerance in basis points (default: 50)"),
         ("quote_type" = Option<String>, Query, description = "Type of quote: 'sell' or 'buy' (default: sell)"),
+        ("fields" = Option<String>, Query, description = "Optional comma-separated top-level quote fields to include (e.g., 'price,total,path'). Unknown fields return 400."),
     ),
     responses(
         (status = 200, description = "Price quote", body = QuoteResponse),
@@ -105,7 +140,7 @@ pub async fn get_quote(
     headers: axum::http::HeaderMap,
     request_id: RequestId,
     request: crate::middleware::validation::ValidatedQuoteRequest,
-) -> Result<Json<crate::models::ApiResponse<QuoteResponse>>> {
+) -> Result<axum::response::Response> {
     let ValidatedQuoteRequest {
         base: base_asset,
         quote: quote_asset,
@@ -121,6 +156,7 @@ pub async fn get_quote(
         .map(|s| s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     let explain = explain_header || params.explain.unwrap_or(false);
+    let selected_fields = params.selected_fields();
 
     let start_time = std::time::Instant::now();
 
@@ -144,7 +180,8 @@ pub async fn get_quote(
         )
         .await
         {
-            Ok((quote_resp, cache_hit)) => {
+            Ok((prepared_quote, cache_hit)) => {
+                let quote_resp = prepared_quote.into_quote()?;
                 let error_class = "none";
                 let latency_ms = start_time.elapsed().as_millis() as u64;
 
@@ -186,8 +223,15 @@ pub async fn get_quote(
                     audit_exclusions,
                 );
 
+                if let Some(fields) = &selected_fields {
+                    let sparse_data = build_sparse_quote_data(&quote_resp, fields)?;
+                    let envelope =
+                        crate::models::ApiResponse::new(sparse_data, request_id.to_string());
+                    return Ok(Json(envelope).into_response());
+                }
+
                 let envelope = crate::models::ApiResponse::new(quote_resp, request_id.to_string());
-                Ok(Json(envelope))
+                Ok(Json(envelope).into_response())
             }
             Err(e) => {
                 let (error_class, audit_outcome) = match &e {
@@ -423,6 +467,7 @@ pub async fn get_batch_quotes(
                         .quote_type
                         .unwrap_or(crate::models::request::QuoteType::Sell),
                     explain: None,
+                    fields: None,
                 };
 
                 let base_asset = match AssetPath::parse(&item.base) {
@@ -451,7 +496,13 @@ pub async fn get_batch_quotes(
                 };
 
                 match get_quote_inner(state, base_asset, quote_asset, params, false).await {
-                    Ok((quote, _cache_hit)) => BatchQuoteItemResult::ok(i, quote),
+                    Ok((quote, _cache_hit)) => match quote.into_quote() {
+                        Ok(quote) => BatchQuoteItemResult::ok(i, quote),
+                        Err(e) => {
+                            let (code, message) = batch_error_from_api_error(&e);
+                            BatchQuoteItemResult::err(i, BatchItemError { code, message })
+                        }
+                    },
                     Err(e) => {
                         let (code, message) = batch_error_from_api_error(&e);
                         BatchQuoteItemResult::err(i, BatchItemError { code, message })
@@ -674,6 +725,8 @@ async fn compute_quote_response(
         freshness_outcome,
         fresh_timestamps,
         liquidity_snapshot,
+        midpoint,
+        spread_bps,
     ) = find_best_price(&state, &base_asset, &quote_asset, base_id, quote_id, amount).await?;
 
     let stale_count = freshness_outcome.stale.len();
@@ -717,6 +770,8 @@ async fn compute_quote_response(
         rationale: Some(rationale),
         exclusion_diagnostics: Some(api_diagnostics),
         data_freshness,
+        midpoint: midpoint.map(|m| format!("{:.7}", m)),
+        spread_bps,
         price_impact: None,
     };
 
@@ -821,6 +876,8 @@ type FindBestPriceResult = (
     FreshnessOutcome,
     Vec<chrono::DateTime<chrono::Utc>>,
     Vec<crate::replay::artifact::LiquidityCandidate>, // snapshot for replay capture
+    Option<f64>,                                      // midpoint
+    Option<u32>,                                      // spread_bps
 );
 
 #[derive(Debug, Clone)]
@@ -912,8 +969,22 @@ async fn find_best_price(
         Err(_) => warn!("AMM source timed out after {:?}", dynamic_timeout),
     }
 
-    // Deterministic merge: sort by price, then venue type, then ref
-    candidates.sort_by(|a, b| {
+    // Split candidates into direct and inverse (for midpoint/spread calculation)
+    let direct_candidates: Vec<DirectVenueCandidate> = candidates
+        .iter()
+        .filter(|c| !c.is_inverse)
+        .cloned()
+        .collect();
+
+    let inverse_candidates: Vec<DirectVenueCandidate> = candidates
+        .iter()
+        .filter(|c| c.is_inverse)
+        .cloned()
+        .collect();
+
+    // Deterministic merge for direct candidates (Req 2.1)
+    let mut sorted_direct = direct_candidates.clone();
+    sorted_direct.sort_by(|a, b| {
         a.price
             .partial_cmp(&b.price)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -921,9 +992,31 @@ async fn find_best_price(
             .then_with(|| a.venue_ref.cmp(&b.venue_ref))
     });
 
-    // Stage 2: Freshness evaluation
+    // Calculate market midpoint and spread across all fresh venues (Req 5.1)
+    let best_ask = direct_candidates
+        .iter()
+        .filter(|c| c.price > 0.0)
+        .map(|c| c.price)
+        .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let best_bid = inverse_candidates
+        .iter()
+        .filter(|c| c.price > 0.0)
+        .map(|c| 1.0 / c.price)
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let (midpoint, spread_bps) = match (best_ask, best_bid) {
+        (Some(ask), Some(bid)) if ask > 0.0 && bid > 0.0 => {
+            let mid = (ask + bid) / 2.0;
+            let spread = (ask - bid) / mid;
+            (Some(mid), Some((spread * 10000.0).max(0.0) as u32))
+        }
+        _ => (None, None),
+    };
+
+    // Stage 2: Freshness evaluation (only for direct candidates)
     let now = chrono::Utc::now();
-    let scorer_inputs: Vec<VenueScorerInput> = candidates
+    let scorer_inputs: Vec<VenueScorerInput> = direct_candidates
         .iter()
         .map(|c| {
             if c.venue_type == "amm" {
@@ -960,14 +1053,6 @@ async fn find_best_price(
         FreshnessGuard::evaluate(&scorer_inputs, &health_config.freshness_threshold_secs, now);
     budget_tracker.record(PipelineStage::FreshnessEval, freshness_guard.complete());
 
-    // Health scoring / exclusion policy (defaults match routing `HealthScoringConfig`)
-    let health_config = HealthScoringConfig::default();
-    let freshness_outcome =
-        FreshnessGuard::evaluate(&scorer_inputs, &health_config.freshness_threshold_secs, now);
-
-    tracing::Span::current().record("stale_count", freshness_outcome.stale.len());
-    tracing::Span::current().record("fresh_count", freshness_outcome.fresh.len());
-
     if freshness_outcome.fresh.is_empty() {
         state.cache_metrics.inc_stale_rejection();
         return Err(ApiError::StaleMarketData {
@@ -981,7 +1066,7 @@ async fn find_best_price(
     let fresh_candidates: Vec<DirectVenueCandidate> = freshness_outcome
         .fresh
         .iter()
-        .filter_map(|&idx| candidates.get(idx).cloned())
+        .filter_map(|&idx| direct_candidates.get(idx).cloned())
         .collect();
 
     link_source_traces(&candidates);
@@ -994,7 +1079,7 @@ async fn find_best_price(
     let mut stale_exclusion_entries: Vec<ApiExcludedVenueInfo> = freshness_outcome
         .stale
         .iter()
-        .filter_map(|&idx| candidates.get(idx))
+        .filter_map(|&idx| direct_candidates.get(idx))
         .map(|candidate| ApiExcludedVenueInfo {
             venue_ref: candidate.venue_ref.clone(),
             reason: ApiExclusionReason::StaleData,
@@ -1131,6 +1216,7 @@ async fn find_best_price(
             venue_ref: c.venue_ref.clone(),
             price: format!("{:.7}", c.price),
             available_amount: format!("{:.7}", c.available_amount),
+            fee_bps: Some(c.fee_bps),
         })
         .collect();
 
@@ -1139,6 +1225,8 @@ async fn find_best_price(
         to_asset: asset_path_to_info(quote),
         price: format!("{:.7}", selected.price),
         source: selected.path_source(),
+        liquidity_depth: Some(format!("{:.7}", selected.available_amount)),
+        fee_bps: Some(selected.fee_bps),
     }];
 
     Ok((
@@ -1149,6 +1237,8 @@ async fn find_best_price(
         freshness_outcome,
         fresh_timestamps,
         liquidity_snapshot,
+        midpoint,
+        spread_bps,
     ))
 }
 
@@ -1256,6 +1346,22 @@ async fn maybe_invalidate_quote_cache(
                         "Liquidity revision changed for {}/{}; invalidated {} quote cache keys",
                         base, quote, deleted
                     );
+
+                    if deleted > 0 {
+                        let payload = QuoteExpirationWebhookPayload {
+                            event_id: Uuid::new_v4().to_string(),
+                            consumer_id: String::new(),
+                            quote_id: format!("invalidated:{base}:{quote}:{liquidity_revision}"),
+                            pair: format!("{base}/{quote}"),
+                            reason: "cache_invalidated".to_string(),
+                            expired_at: chrono::Utc::now().timestamp_millis(),
+                        };
+
+                        state
+                            .quote_expiration_webhooks
+                            .clone()
+                            .spawn_dispatch_to_all(payload);
+                    }
                 }
 
                 let _ = cache
@@ -1474,6 +1580,26 @@ fn build_audit_exclusions(quote: &QuoteResponse) -> Vec<AuditExclusion> {
         .unwrap_or_default()
 }
 
+fn build_sparse_quote_data(quote: &QuoteResponse, selected_fields: &[String]) -> Result<Value> {
+    let serialized = serde_json::to_value(quote)
+        .map_err(|e| ApiError::Internal(Arc::new(anyhow::anyhow!(e))))?;
+
+    let data_obj = serialized.as_object().ok_or_else(|| {
+        ApiError::Internal(Arc::new(anyhow::anyhow!(
+            "quote payload did not serialize to an object"
+        )))
+    })?;
+
+    let mut sparse = Map::new();
+    for field in selected_fields {
+        if let Some(value) = data_obj.get(field) {
+            sparse.insert(field.clone(), value.clone());
+        }
+    }
+
+    Ok(Value::Object(sparse))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1484,6 +1610,7 @@ mod tests {
         venue_ref: &str,
         price: f64,
         available_amount: f64,
+        fee_bps: u32,
     ) -> DirectVenueCandidate {
         DirectVenueCandidate {
             venue_type: venue_type.to_string(),
@@ -1492,15 +1619,17 @@ mod tests {
             available_amount,
             price_e7: (price * 1e7) as i64,
             available_amount_e7: (available_amount * 1e7) as i64,
+            fee_bps,
+            is_inverse: false,
         }
     }
 
     #[test]
     fn selects_best_executable_direct_venue() {
         let candidates = vec![
-            candidate("amm", "pool1", 1.02, 100.0),
-            candidate("sdex", "offer2", 1.01, 25.0),
-            candidate("sdex", "offer1", 1.00, 75.0),
+            candidate("amm", "pool1", 1.02, 100.0, 30),
+            candidate("sdex", "offer2", 1.01, 25.0, 0),
+            candidate("sdex", "offer1", 1.00, 75.0, 0),
         ];
 
         let (selected, rationale) =
@@ -1760,6 +1889,80 @@ mod tests {
         assert_eq!(data_freshness.fresh_count, 1);
         assert_eq!(data_freshness.max_staleness_secs, 300);
     }
+
+    fn sample_quote_response() -> QuoteResponse {
+        QuoteResponse {
+            base_asset: AssetInfo::native(),
+            quote_asset: AssetInfo::credit("USDC".to_string(), Some("GISSUER".to_string())),
+            amount: "100.0000000".to_string(),
+            price: "1.0500000".to_string(),
+            total: "105.0000000".to_string(),
+            quote_type: "sell".to_string(),
+            degraded: false,
+            path: vec![],
+            timestamp: 1_700_000_000_000,
+            expires_at: Some(1_700_000_030_000),
+            source_timestamp: Some(1_700_000_000_000),
+            ttl_seconds: Some(30),
+            rationale: None,
+            price_impact: Some("0.10".to_string()),
+            exclusion_diagnostics: None,
+            data_freshness: None,
+            midpoint: Some("1.0450000".to_string()),
+            spread_bps: Some(15),
+        }
+    }
+
+    #[test]
+    fn sparse_fields_common_price_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "price".to_string(),
+            "total".to_string(),
+            "timestamp".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("price"));
+        assert!(obj.contains_key("total"));
+        assert!(obj.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn sparse_fields_common_asset_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "base_asset".to_string(),
+            "quote_asset".to_string(),
+            "path".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("base_asset"));
+        assert!(obj.contains_key("quote_asset"));
+        assert!(obj.contains_key("path"));
+    }
+
+    #[test]
+    fn sparse_fields_omits_unselected_values() {
+        let quote = sample_quote_response();
+        let fields = vec!["price".to_string()];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("price"));
+        assert!(!obj.contains_key("total"));
+        assert!(!obj.contains_key("base_asset"));
+    }
+
     #[tokio::test]
     async fn test_parallel_execution_latency() {
         use std::time::{Duration, Instant};

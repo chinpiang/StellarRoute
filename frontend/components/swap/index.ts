@@ -9,3 +9,5 @@ export type { QuoteStreamStatusIndicatorProps } from "./QuoteStreamStatusIndicat
 
 export { BatchSwapPreview } from "./BatchSwapPreview";
 export type { BatchSwapPreviewProps, BatchSwapLeg } from "./BatchSwapPreview";
+export { VenueBadgeLegend } from "./VenueBadgeLegend";
+
