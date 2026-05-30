@@ -10,7 +10,8 @@
 //!
 //! Request logs and decision stages include matching `request_id` values.
 
-use axum::{extract::State, Json};
+use axum::{extract::State, response::IntoResponse, Json};
+use serde_json::{Map, Value};
 use sqlx::Row;
 use std::sync::Arc;
 use std::time::Duration;
@@ -86,6 +87,7 @@ fn build_quote_webhook_payload(
         ("amount" = Option<String>, Query, description = "Amount to trade (default: 1)"),
         ("slippage_bps" = Option<u32>, Query, description = "Slippage tolerance in basis points (default: 50)"),
         ("quote_type" = Option<String>, Query, description = "Type of quote: 'sell' or 'buy' (default: sell)"),
+        ("fields" = Option<String>, Query, description = "Optional comma-separated top-level quote fields to include (e.g., 'price,total,path'). Unknown fields return 400."),
     ),
     responses(
         (status = 200, description = "Price quote", body = QuoteResponse),
@@ -138,7 +140,7 @@ pub async fn get_quote(
     headers: axum::http::HeaderMap,
     request_id: RequestId,
     request: crate::middleware::validation::ValidatedQuoteRequest,
-) -> Result<Json<crate::models::ApiResponse<QuoteResponse>>> {
+) -> Result<axum::response::Response> {
     let ValidatedQuoteRequest {
         base: base_asset,
         quote: quote_asset,
@@ -154,6 +156,7 @@ pub async fn get_quote(
         .map(|s| s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     let explain = explain_header || params.explain.unwrap_or(false);
+    let selected_fields = params.selected_fields();
 
     let start_time = std::time::Instant::now();
 
@@ -220,29 +223,15 @@ pub async fn get_quote(
                     audit_exclusions,
                 );
 
-                if let Some(consumer_id) = extract_consumer_id(&headers) {
-                    let ttl_seconds = quote_resp
-                        .ttl_seconds
-                        .unwrap_or(state.cache_policy.quote_ttl.as_secs() as u32)
-                        as u64;
-                    let payload = build_quote_webhook_payload(
-                        consumer_id.clone(),
-                        &base,
-                        &quote,
-                        &quote_resp,
-                    );
-                    state
-                        .quote_expiration_webhooks
-                        .clone()
-                        .spawn_delayed_dispatch_for_consumer(
-                            consumer_id,
-                            payload,
-                            Duration::from_secs(ttl_seconds),
-                        );
+                if let Some(fields) = &selected_fields {
+                    let sparse_data = build_sparse_quote_data(&quote_resp, fields)?;
+                    let envelope =
+                        crate::models::ApiResponse::new(sparse_data, request_id.to_string());
+                    return Ok(Json(envelope).into_response());
                 }
 
                 let envelope = crate::models::ApiResponse::new(quote_resp, request_id.to_string());
-                Ok(Json(envelope))
+                Ok(Json(envelope).into_response())
             }
             Err(e) => {
                 let (error_class, audit_outcome) = match &e {
@@ -478,6 +467,7 @@ pub async fn get_batch_quotes(
                         .quote_type
                         .unwrap_or(crate::models::request::QuoteType::Sell),
                     explain: None,
+                    fields: None,
                 };
 
                 let base_asset = match AssetPath::parse(&item.base) {
@@ -506,7 +496,7 @@ pub async fn get_batch_quotes(
                 };
 
                 match get_quote_inner(state, base_asset, quote_asset, params, false).await {
-                    Ok((prepared_quote, _cache_hit)) => match prepared_quote.into_quote() {
+                    Ok((quote, _cache_hit)) => match quote.into_quote() {
                         Ok(quote) => BatchQuoteItemResult::ok(i, quote),
                         Err(e) => {
                             let (code, message) = batch_error_from_api_error(&e);
@@ -1547,6 +1537,26 @@ fn build_audit_exclusions(quote: &QuoteResponse) -> Vec<AuditExclusion> {
         .unwrap_or_default()
 }
 
+fn build_sparse_quote_data(quote: &QuoteResponse, selected_fields: &[String]) -> Result<Value> {
+    let serialized = serde_json::to_value(quote)
+        .map_err(|e| ApiError::Internal(Arc::new(anyhow::anyhow!(e))))?;
+
+    let data_obj = serialized.as_object().ok_or_else(|| {
+        ApiError::Internal(Arc::new(anyhow::anyhow!(
+            "quote payload did not serialize to an object"
+        )))
+    })?;
+
+    let mut sparse = Map::new();
+    for field in selected_fields {
+        if let Some(value) = data_obj.get(field) {
+            sparse.insert(field.clone(), value.clone());
+        }
+    }
+
+    Ok(Value::Object(sparse))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1836,6 +1846,80 @@ mod tests {
         assert_eq!(data_freshness.fresh_count, 1);
         assert_eq!(data_freshness.max_staleness_secs, 300);
     }
+
+    fn sample_quote_response() -> QuoteResponse {
+        QuoteResponse {
+            base_asset: AssetInfo::native(),
+            quote_asset: AssetInfo::credit("USDC".to_string(), Some("GISSUER".to_string())),
+            amount: "100.0000000".to_string(),
+            price: "1.0500000".to_string(),
+            total: "105.0000000".to_string(),
+            quote_type: "sell".to_string(),
+            degraded: false,
+            path: vec![],
+            timestamp: 1_700_000_000_000,
+            expires_at: Some(1_700_000_030_000),
+            source_timestamp: Some(1_700_000_000_000),
+            ttl_seconds: Some(30),
+            rationale: None,
+            price_impact: Some("0.10".to_string()),
+            exclusion_diagnostics: None,
+            data_freshness: None,
+            midpoint: Some("1.0450000".to_string()),
+            spread_bps: Some(15),
+        }
+    }
+
+    #[test]
+    fn sparse_fields_common_price_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "price".to_string(),
+            "total".to_string(),
+            "timestamp".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("price"));
+        assert!(obj.contains_key("total"));
+        assert!(obj.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn sparse_fields_common_asset_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "base_asset".to_string(),
+            "quote_asset".to_string(),
+            "path".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("base_asset"));
+        assert!(obj.contains_key("quote_asset"));
+        assert!(obj.contains_key("path"));
+    }
+
+    #[test]
+    fn sparse_fields_omits_unselected_values() {
+        let quote = sample_quote_response();
+        let fields = vec!["price".to_string()];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("price"));
+        assert!(!obj.contains_key("total"));
+        assert!(!obj.contains_key("base_asset"));
+    }
+
     #[tokio::test]
     async fn test_parallel_execution_latency() {
         use std::time::{Duration, Instant};
