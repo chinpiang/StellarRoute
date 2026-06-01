@@ -257,32 +257,19 @@ fn side_depth(levels: &[OrderbookLevel]) -> (f64, f64) {
 }
 
 fn pair_key(base: &AssetInfo, quote: &AssetInfo) -> String {
-    format!(
-        "{}/{}",
-        normalize_asset_key(&base.to_canonical()),
-        normalize_asset_key(&quote.to_canonical())
-    )
+    let (norm_base, norm_quote) =
+        stellarroute_routing::normalize_pair_owned(&base.to_canonical(), &quote.to_canonical());
+    format!("{}/{}", norm_base, norm_quote)
 }
 
 fn normalize_pair_key(pair: &str) -> String {
     pair.split_once('/')
         .map(|(base, quote)| {
-            format!(
-                "{}/{}",
-                normalize_asset_key(base),
-                normalize_asset_key(quote)
-            )
+            let (norm_base, norm_quote) =
+                stellarroute_routing::normalize_pair_owned(base, quote);
+            format!("{}/{}", norm_base, norm_quote)
         })
-        .unwrap_or_else(|| normalize_asset_key(pair))
-}
-
-fn normalize_asset_key(asset: &str) -> String {
-    let trimmed = asset.trim();
-    if trimmed.eq_ignore_ascii_case("xlm") || trimmed.eq_ignore_ascii_case("native") {
-        "native".to_string()
-    } else {
-        trimmed.to_string()
-    }
+        .unwrap_or_else(|| stellarroute_routing::normalize_asset(pair))
 }
 
 fn timestamp_from_orderbook(orderbook: &OrderbookResponse) -> Option<DateTime<Utc>> {

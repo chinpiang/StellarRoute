@@ -279,8 +279,12 @@ pub mod keys {
     }
 
     /// Cache key for orderbook
+    ///
+    /// Uses canonical pair ordering so that `orderbook(A,B)` and `orderbook(B,A)`
+    /// produce the same key.
     pub fn orderbook(base: &str, quote: &str) -> String {
-        format!("orderbook:{}:{}", base, quote)
+        let (norm_base, norm_quote) = normalize_pair_assets(base, quote);
+        format!("orderbook:{}:{}", norm_base, norm_quote)
     }
 
     /// Cache key for quote (versioned: v2)
@@ -304,13 +308,11 @@ pub mod keys {
     }
 
     /// Normalize asset identifiers (e.g. XLM/xlm -> native)
+    ///
+    /// Delegates to the shared [`stellarroute_routing::normalize_asset`] so
+    /// that all crates use the same canonical representation.
     fn normalize_asset(asset: &str) -> String {
-        let asset = asset.to_lowercase();
-        if asset == "xlm" || asset == "native" {
-            "native".to_string()
-        } else {
-            asset.to_uppercase()
-        }
+        stellarroute_routing::normalize_asset(asset)
     }
 
     /// Normalize amounts to a canonical string (7 decimal precision)
@@ -321,22 +323,29 @@ pub mod keys {
         }
     }
 
+    /// Normalize two assets individually then return them in canonical pair order.
+    ///
+    /// Delegates to the shared [`stellarroute_routing::normalize_pair_owned`]
+    /// so that all crates use the same canonical representation.
+    fn normalize_pair_assets(a: &str, b: &str) -> (String, String) {
+        stellarroute_routing::normalize_pair_owned(a, b)
+    }
+
     /// Key used to track the latest liquidity revision observed for a pair
+    ///
+    /// Uses canonical pair ordering so that revision checks are consistent
+    /// regardless of asset ordering.
     pub fn liquidity_revision(base: &str, quote: &str) -> String {
-        format!(
-            "liquidity:revision:{}:{}",
-            normalize_asset(base),
-            normalize_asset(quote)
-        )
+        let (norm_base, norm_quote) = normalize_pair_assets(base, quote);
+        format!("liquidity:revision:{}:{}", norm_base, norm_quote)
     }
 
     /// Pattern that matches all cached quotes for a pair
+    ///
+    /// Uses canonical pair ordering so that invalidation covers both orderings.
     pub fn quote_pair_pattern(base: &str, quote: &str) -> String {
-        format!(
-            "*quote:{}:{}:*",
-            normalize_asset(base),
-            normalize_asset(quote)
-        )
+        let (norm_base, norm_quote) = normalize_pair_assets(base, quote);
+        format!("*quote:{}:{}:*", norm_base, norm_quote)
     }
 }
 
@@ -348,14 +357,30 @@ mod tests {
     async fn test_cache_keys() {
         assert_eq!(keys::pairs_list(), "pairs:list");
         assert_eq!(keys::pairs_list_page(25, 50), "pairs:list:25:50");
-        assert_eq!(keys::orderbook("XLM", "USDC"), "orderbook:XLM:USDC");
+        // orderbook uses canonical pair ordering: "native" < "USDC" lexicographically
+        assert_eq!(
+            keys::orderbook("USDC", "XLM"),
+            "orderbook:native:USDC"
+        );
+        assert_eq!(
+            keys::orderbook("XLM", "USDC"),
+            "orderbook:native:USDC"
+        );
         assert_eq!(
             keys::quote("xlm", "usdc", "100.0", 50, "sell", true),
             "v2:quote:native:USDC:100.0000000:50:sell:true"
         );
         assert_eq!(
+            keys::liquidity_revision("USDC", "xlm"),
+            "liquidity:revision:native:USDC"
+        );
+        assert_eq!(
             keys::liquidity_revision("xlm", "USDC"),
             "liquidity:revision:native:USDC"
+        );
+        assert_eq!(
+            keys::quote_pair_pattern("USDC", "XLM"),
+            "*quote:native:USDC:*"
         );
         assert_eq!(
             keys::quote_pair_pattern("XLM", "usdc"),
@@ -373,6 +398,23 @@ mod tests {
         assert_eq!(key1, "v2:quote:native:USDC:100.0000000:50:sell:false");
         assert_eq!(key1, key2);
         assert_eq!(key2, key3);
+    }
+
+    #[tokio::test]
+    async fn test_canonical_pair_ordering_in_cache_keys() {
+        // Reversed URL parameters produce the same pair-oriented cache keys
+        assert_eq!(
+            keys::orderbook("USDC", "native"),
+            keys::orderbook("native", "USDC"),
+        );
+        assert_eq!(
+            keys::liquidity_revision("USDC:GA5ZSEJ", "XLM"),
+            keys::liquidity_revision("XLM", "USDC:GA5ZSEJ"),
+        );
+        assert_eq!(
+            keys::quote_pair_pattern("BTC", "ETH"),
+            keys::quote_pair_pattern("ETH", "BTC"),
+        );
     }
 
     #[tokio::test]
