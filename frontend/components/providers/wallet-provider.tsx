@@ -1,13 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext } from 'react';
+import type { ReactNode } from 'react';
 import {
   connectWallet,
   disconnectWallet,
   getAvailableWallets,
   refreshWalletSession,
-  checkWalletCapabilities,
 } from '@/lib/wallet';
 import type {
   AvailableWallet,
@@ -15,7 +15,6 @@ import type {
   WalletError,
   WalletNetwork,
   AccountSwitchState,
-  Capabilities,
 } from '@/lib/wallet/types';
 
 interface WalletContextValue {
@@ -40,8 +39,6 @@ interface WalletContextValue {
   accountSwitchState: AccountSwitchState;
   isTransactionPending: boolean;
   setTransactionPending: (pending: boolean) => void;
-  capabilities: Capabilities | null;
-  refreshCapabilities: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextValue | undefined>(undefined);
@@ -74,11 +71,8 @@ export function WalletProvider({
     previousAddress: null,
   });
   const [isTransactionPending, setIsTransactionPending] = React.useState(false);
-  const [capabilities, setCapabilities] = React.useState<Capabilities | null>(null);
   const didAttemptInitialReconnect = React.useRef(false);
   const reconnectThrottleUntilMs = React.useRef(0);
-  const previousAddressRef = React.useRef<string | null>(null);
-  const previousNetworkRef = React.useRef<WalletNetwork | null>(null);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
@@ -276,42 +270,6 @@ export function WalletProvider({
   const networkMismatch = isConnected && walletNetwork !== null && walletNetwork !== network;
   const stubSpendableBalance = isConnected ? '10000.0000000' : null;
 
-  const refreshCapabilities = React.useCallback(async () => {
-    if (!walletId || !isConnected) {
-      setCapabilities(null);
-      return;
-    }
-    try {
-      const result = await checkWalletCapabilities(walletId, network);
-      setCapabilities(result);
-    } catch {
-      setCapabilities(null);
-    }
-  }, [walletId, isConnected, network]);
-
-  React.useEffect(() => {
-    if (walletId && isConnected) {
-      previousAddressRef.current = address;
-      previousNetworkRef.current = walletNetwork;
-      void refreshCapabilities();
-    }
-  }, [walletId, isConnected]);
-
-  React.useEffect(() => {
-    if (!isConnected || !walletId) return;
-
-    const addressChanged = previousAddressRef.current !== null &&
-      address !== null &&
-      address !== previousAddressRef.current;
-    const networkChanged = previousNetworkRef.current !== null &&
-      walletNetwork !== null &&
-      walletNetwork !== previousNetworkRef.current;
-
-    if (addressChanged || networkChanged) {
-      void refreshCapabilities();
-    }
-  }, [address, walletNetwork, isConnected, walletId, refreshCapabilities]);
-
   const value: WalletContextValue = {
     address,
     isConnected,
@@ -336,8 +294,6 @@ export function WalletProvider({
     setTransactionPending: React.useCallback((pending: boolean) => {
       setIsTransactionPending(pending);
     }, []),
-    capabilities,
-    refreshCapabilities,
   };
 
   return (

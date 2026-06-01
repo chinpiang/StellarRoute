@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowUpDown, RefreshCw } from 'lucide-react';
 import { AmountInput } from './AmountInput';
 import { TokenSelector } from './TokenSelector';
+import { PriceImpactHeatmapSlider } from './PriceImpactHeatmapSlider';
 import { PriceInfoPanel } from './PriceInfoPanel';
 import { RouteDisplay } from './RouteDisplay';
 import type { AlternativeRoute } from './RouteDisplay';
@@ -16,6 +17,8 @@ import { TransactionConfirmationModal } from './TransactionConfirmationModal';
 import { QuoteStreamStatusIndicator } from './QuoteStreamStatusIndicator';
 import { SessionRecoveryModal } from './SessionRecoveryModal';
 import { useSwapState } from '@/hooks/useSwapState';
+import { useOptimisticSwap } from '@/hooks/useOptimisticSwap';
+import type { PreSubmitSnapshot } from '@/types/transaction';
 import {
   SESSION_RECOVERY_THRESHOLD_MS,
   type TradeFormSnapshot,
@@ -467,6 +470,16 @@ export function SwapCard() {
                   className="mt-6"
                 />
               </div>
+              {isConnected && (
+                <PriceImpactHeatmapSlider
+                  fromToken={fromToken}
+                  toToken={toToken}
+                  balance={parseFloat(fromBalance)}
+                  currentAmount={fromAmount}
+                  onChangeAmount={setFromAmount}
+                  disabled={quote.loading}
+                />
+              )}
             </div>
           </div>
 
