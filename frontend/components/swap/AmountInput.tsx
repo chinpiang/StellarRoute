@@ -18,6 +18,8 @@ interface AmountInputProps {
   className?: string;
   label?: string;
   balance?: string;
+  balanceLoading?: boolean;
+  balanceError?: boolean;
   showMax?: boolean;
   showPresets?: boolean;
   decimals?: number; 
@@ -34,6 +36,8 @@ export function AmountInput({
   className,
   label,
   balance,
+  balanceLoading = false,
+  balanceError = false,
   showMax = true,
   showPresets = false,
   decimals = 7,
@@ -80,9 +84,16 @@ export function AmountInput({
             {label}
           </label>
         )}
-        {balance && (
+        {(balance || balanceLoading || balanceError) && (
           <span className="text-xs text-muted-foreground">
-            Balance: <span className="font-medium text-foreground/80">{balance}</span>
+            Balance:{' '}
+            <span className="font-medium text-foreground/80">
+              {balanceLoading
+                ? 'Loading...'
+                : balanceError
+                  ? 'Unavailable'
+                  : balance}
+            </span>
           </span>
         )}
       </div>
