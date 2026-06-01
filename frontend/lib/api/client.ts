@@ -11,6 +11,7 @@
 import type {
   HealthStatus,
   Orderbook,
+  PriceHistoryResponse,
   PairsResponse,
   PriceQuote,
   QuoteType,

@@ -21,6 +21,7 @@ import { QUOTE_AMOUNT_DEBOUNCE_MS } from '@/lib/quote-stale';
 import type {
   HealthStatus,
   Orderbook,
+  PriceHistoryResponse,
   PairsResponse,
   PriceQuote,
   QuoteType,
@@ -166,6 +167,20 @@ export function useOrderbook(
     (signal) => stellarRouteClient.getOrderbook(base, quote, { signal }),
     [base, quote],
     { refreshIntervalMs },
+  );
+}
+
+export function usePriceHistory(
+  base: string,
+  quote: string,
+  refreshIntervalMs = 60_000,
+  skip = false,
+): UseApiState<PriceHistoryResponse> & { refresh: () => void } {
+  return useFetch(
+    (signal) => stellarRouteClient.getPriceHistory(base, quote, { signal }),
+    [base, quote],
+    refreshIntervalMs,
+    skip || !base || !quote,
   );
 }
 

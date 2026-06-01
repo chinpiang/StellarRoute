@@ -6,6 +6,7 @@ pub mod idempotent_quote;
 pub mod integrator_webhooks;
 pub mod kill_switch;
 pub mod metrics;
+pub mod price_history;
 pub mod orderbook;
 pub mod pairs;
 pub mod prometheus;
@@ -39,6 +40,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/v1/orderbook/:base/:quote",
             get(orderbook::get_orderbook),
+        )
+        .route(
+            "/api/v1/price-history/:base/:quote",
+            get(price_history::get_price_history),
         )
         .route("/api/v1/quote/:base/:quote", get(quote::get_quote))
         .route("/api/v1/quote", post(idempotent_quote::post_quote))
