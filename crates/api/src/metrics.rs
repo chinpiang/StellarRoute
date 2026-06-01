@@ -63,6 +63,22 @@ lazy_static! {
         &["pair"]
     )
     .expect("Can't create CONSISTENCY_VIOLATIONS counter");
+
+    /// Total single-flight coalesced requests (stampede prevention).
+    pub static ref SINGLE_FLIGHT_COALESCED: IntCounterVec = register_int_counter_vec!(
+        "stellarroute_single_flight_coalesced_total",
+        "Total requests coalesced by single-flight (stampede prevention)",
+        &["type"]
+    )
+    .expect("Can't create SINGLE_FLIGHT_COALESCED counter");
+
+    /// Total single-flight unique leader computations (requests that executed the work)
+    pub static ref SINGLE_FLIGHT_UNIQUE: IntCounterVec = register_int_counter_vec!(
+        "stellarroute_single_flight_unique_total",
+        "Total requests that became single-flight leaders and performed the compute",
+        &["type"]
+    )
+    .expect("Can't create SINGLE_FLIGHT_UNIQUE counter");
 }
 
 /// Record quote latency metric
@@ -97,6 +113,20 @@ pub fn record_cache_hit(cache_type: &str) {
 /// Record cache miss
 pub fn record_cache_miss(cache_type: &str) {
     CACHE_MISSES.with_label_values(&[cache_type]).inc();
+}
+
+/// Record a single-flight coalesced request.
+pub fn record_single_flight_coalesced(request_type: &str) {
+    SINGLE_FLIGHT_COALESCED
+        .with_label_values(&[request_type])
+        .inc();
+}
+
+/// Record a single-flight unique leader computation.
+pub fn record_single_flight_unique(request_type: &str) {
+    SINGLE_FLIGHT_UNIQUE
+        .with_label_values(&[request_type])
+        .inc();
 }
 
 /// Record snapshot consistency violation for a trading pair.

@@ -178,82 +178,177 @@ impl<T: Send + Sync + 'static> SingleFlight<T> {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Arc<T>>,
     {
-        // 1. Check if already in flight
-        let mut mg = self.inflight.lock().await;
-        if let Some(inflight) = mg.get(key) {
-            let inflight = Arc::clone(inflight);
-            drop(mg);
+        // We'll loop until we either return a cached/finished result or become the leader
+        // that runs the computation. This allows followers to retry becoming the leader
+        // if the previous leader was cancelled and removed the inflight entry.
+        let mut maybe_f = Some(f);
+        loop {
+            // 1. Fast-path: check if already in flight
+            let mut mg = self.inflight.lock().await;
+            if let Some(inflight) = mg.get(key) {
+                let inflight = Arc::clone(inflight);
+                drop(mg);
 
-            // Create notification future BEFORE checking the result to avoid race
-            let notified = inflight.notify.notified();
+                // Create notification future BEFORE checking the result to avoid race
+                let notified = inflight.notify.notified();
 
-            // Check if already finished
-            {
+                // Check if already finished
+                {
+                    let res = inflight.result.read().await;
+                    if let Some(result) = res.as_ref() {
+                        return Arc::clone(result);
+                    }
+                }
+
+                // Wait for notification if not finished yet
+                notified.await;
+
+                // After being notified, loop and re-check state: either the result
+                // is present (return it) or the inflight entry was removed and we
+                // should attempt to become the leader (next loop iteration will do so).
                 let res = inflight.result.read().await;
                 if let Some(result) = res.as_ref() {
                     return Arc::clone(result);
                 }
+
+                // No result present: previous leader likely cancelled. Try again.
+                continue;
             }
 
-            // Wait for notification if not finished yet
-            notified.await;
+            // 2. Not in flight: become the leader
+            let inflight = Arc::new(InFlight {
+                result: tokio::sync::RwLock::new(None),
+                notify: tokio::sync::Notify::new(),
+            });
+            mg.insert(key.to_string(), Arc::clone(&inflight));
+            drop(mg);
 
-            // Return the result
-            let res = inflight.result.read().await;
-            return res
-                .as_ref()
-                .map(Arc::clone)
-                .expect("Result must be present after notification");
-        }
-
-        // 2. Not in flight, start the work
-        let inflight = Arc::new(InFlight {
-            result: tokio::sync::RwLock::new(None),
-            notify: tokio::sync::Notify::new(),
-        });
-        mg.insert(key.to_string(), Arc::clone(&inflight));
-        drop(mg);
-
-        // 3. Create a guard to ensure cleanup on drop (cancellation/panic)
-        struct LeaderGuard<T: Send + Sync + 'static> {
-            inflight_map:
-                Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<InFlight<T>>>>>,
-            key: String,
-            inflight: Arc<InFlight<T>>,
-        }
-
-        impl<T: Send + Sync + 'static> Drop for LeaderGuard<T> {
-            fn drop(&mut self) {
-                // We need to notify waiters even if we didn't finish
-                // to avoid them hanging forever.
-                self.inflight.notify.notify_waiters();
-
-                let inflight_map = self.inflight_map.clone();
-                let key = self.key.clone();
-                tokio::spawn(async move {
-                    let mut mg = inflight_map.lock().await;
-                    mg.remove(&key);
-                });
+            // Create a guard to ensure cleanup on drop (cancellation/panic)
+            struct LeaderGuard<T: Send + Sync + 'static> {
+                inflight_map:
+                    Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<InFlight<T>>>>>,
+                key: String,
+                inflight: Arc<InFlight<T>>,
             }
+
+            impl<T: Send + Sync + 'static> Drop for LeaderGuard<T> {
+                fn drop(&mut self) {
+                    // Notify waiters so they can re-check state instead of hanging.
+                    self.inflight.notify.notify_waiters();
+
+                    let inflight_map = self.inflight_map.clone();
+                    let key = self.key.clone();
+                    tokio::spawn(async move {
+                        let mut mg = inflight_map.lock().await;
+                        mg.remove(&key);
+                    });
+                }
+            }
+
+            let _guard = LeaderGuard {
+                inflight_map: self.inflight.clone(),
+                key: key.to_string(),
+                inflight: Arc::clone(&inflight),
+            };
+
+            // Perform the computation as leader by taking and calling the closure.
+            let f_taken = maybe_f.take().expect("closure must be available when becoming leader");
+            let result = f_taken().await;
+
+            // Save result and notify others
+            {
+                let mut res_mg = inflight.result.write().await;
+                *res_mg = Some(Arc::clone(&result));
+            }
+            // Notify waiters that result is present
+            inflight.notify.notify_waiters();
+
+            return result;
         }
+    }
 
-        let _guard = LeaderGuard {
-            inflight_map: self.inflight.clone(),
-            key: key.to_string(),
-            inflight: Arc::clone(&inflight),
-        };
+    /// Execute a function with single-flight protection and record metrics with `label`.
+    /// Identical concurrent requests for the same key will share the same computation.
+    pub async fn execute_with_label<F, Fut>(&self, key: &str, label: &str, f: F) -> Arc<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Arc<T>>,
+    {
+        let mut maybe_f = Some(f);
+        loop {
+            let mut mg = self.inflight.lock().await;
+            if let Some(inflight) = mg.get(key) {
+                let inflight = Arc::clone(inflight);
+                drop(mg);
 
-        // 4. Perform the computation
-        let result = f().await;
+                let notified = inflight.notify.notified();
 
-        // 5. Save result and notify others
-        {
-            let mut res_mg = inflight.result.write().await;
-            *res_mg = Some(Arc::clone(&result));
+                {
+                    let res = inflight.result.read().await;
+                    if let Some(result) = res.as_ref() {
+                        // follower returning existing result -> coalesced
+                        crate::metrics::record_single_flight_coalesced(label);
+                        return Arc::clone(result);
+                    }
+                }
+
+                notified.await;
+
+                let res = inflight.result.read().await;
+                if let Some(result) = res.as_ref() {
+                    crate::metrics::record_single_flight_coalesced(label);
+                    return Arc::clone(result);
+                }
+
+                continue;
+            }
+
+            let inflight = Arc::new(InFlight {
+                result: tokio::sync::RwLock::new(None),
+                notify: tokio::sync::Notify::new(),
+            });
+            mg.insert(key.to_string(), Arc::clone(&inflight));
+            drop(mg);
+
+            struct LeaderGuard<T: Send + Sync + 'static> {
+                inflight_map:
+                    Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<InFlight<T>>>>>,
+                key: String,
+                inflight: Arc<InFlight<T>>,
+            }
+
+            impl<T: Send + Sync + 'static> Drop for LeaderGuard<T> {
+                fn drop(&mut self) {
+                    self.inflight.notify.notify_waiters();
+
+                    let inflight_map = self.inflight_map.clone();
+                    let key = self.key.clone();
+                    tokio::spawn(async move {
+                        let mut mg = inflight_map.lock().await;
+                        mg.remove(&key);
+                    });
+                }
+            }
+
+            let _guard = LeaderGuard {
+                inflight_map: self.inflight.clone(),
+                key: key.to_string(),
+                inflight: Arc::clone(&inflight),
+            };
+
+            let f_taken = maybe_f.take().expect("closure must be available when becoming leader");
+            // leader -> unique
+            crate::metrics::record_single_flight_unique(label);
+            let result = f_taken().await;
+
+            {
+                let mut res_mg = inflight.result.write().await;
+                *res_mg = Some(Arc::clone(&result));
+            }
+            inflight.notify.notify_waiters();
+
+            return result;
         }
-        // Result is set, now when _guard drops, workers will see the result.
-
-        result
     }
 }
 
