@@ -47,6 +47,7 @@ pub async fn get_orderbook(
                 .await
             {
                 debug!("Returning cached orderbook for {}/{}", base, quote);
+                state.liquidity_thinness_alerts.maybe_alert(&cached);
                 return Ok(Json(cached));
             }
         }
@@ -101,6 +102,8 @@ pub async fn get_orderbook(
                 .await;
         }
     }
+
+    state.liquidity_thinness_alerts.maybe_alert(&response);
 
     Ok(Json(response))
 }

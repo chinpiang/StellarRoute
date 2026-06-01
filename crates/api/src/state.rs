@@ -17,6 +17,7 @@ use stellarroute_routing::health::circuit_breaker::CircuitBreakerRegistry;
 
 use crate::audit::AuditWriter;
 use crate::indexer_lag::IndexerLagMonitor;
+use crate::liquidity_alerts::LiquidityThinnessAlerts;
 use crate::worker::{JobQueue, RouteWorkerPool, WorkerPoolConfig};
 
 /// Primary database pool for write operations plus an optional replica pool
@@ -154,6 +155,8 @@ pub struct AppState {
     pub audit_writer: Arc<AuditWriter>,
     /// Indexer lag monitor for sync drift detection
     pub indexer_lag: Arc<IndexerLagMonitor>,
+    /// Webhook notifier for configured pair depth thresholds
+    pub liquidity_thinness_alerts: Arc<LiquidityThinnessAlerts>,
 }
 
 impl AppState {
@@ -170,6 +173,7 @@ impl AppState {
         let kill_switch = Arc::new(crate::kill_switch::KillSwitchManager::new(None));
         let audit_writer = Arc::new(AuditWriter::from_env(db.write_pool().clone()));
         let indexer_lag = Arc::new(IndexerLagMonitor::from_env(db.write_pool().clone()));
+        let liquidity_thinness_alerts = Arc::new(LiquidityThinnessAlerts::from_env());
         indexer_lag
             .clone()
             .start_polling(std::time::Duration::from_secs(30));
@@ -198,6 +202,7 @@ impl AppState {
             timeout_controller: Arc::new(TimeoutController::new(Default::default())),
             audit_writer,
             indexer_lag,
+            liquidity_thinness_alerts,
         }
     }
 
@@ -221,6 +226,7 @@ impl AppState {
         )));
         let audit_writer = Arc::new(AuditWriter::from_env(db.write_pool().clone()));
         let indexer_lag = Arc::new(IndexerLagMonitor::from_env(db.write_pool().clone()));
+        let liquidity_thinness_alerts = Arc::new(LiquidityThinnessAlerts::from_env());
         indexer_lag
             .clone()
             .start_polling(std::time::Duration::from_secs(30));
@@ -256,6 +262,7 @@ impl AppState {
             timeout_controller: Arc::new(TimeoutController::new(Default::default())),
             audit_writer,
             indexer_lag,
+            liquidity_thinness_alerts,
         }
     }
 
