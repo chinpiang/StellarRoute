@@ -21,6 +21,7 @@
 //! ```
 
 use opentelemetry::{global, KeyValue};
+use opentelemetry::trace::TraceContextExt;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{RandomIdGenerator, Sampler, Tracer};
@@ -39,7 +40,9 @@ pub struct TraceContext {
 impl TraceContext {
     pub fn current() -> Self {
         let span = Span::current();
-        let span_ctx = span.context().span().span_context();
+        let ctx = span.context();
+        let span_ref = ctx.span();
+        let span_ctx = span_ref.span_context();
 
         Self {
             trace_id: span_ctx.trace_id().to_string(),

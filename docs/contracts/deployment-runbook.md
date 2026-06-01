@@ -259,6 +259,13 @@ The script reads the pool list from:
 ./scripts/upgrade.sh --network testnet
 ```
 
+For operator-managed registration that should persist across restarts and serve as bootstrap fallback for the indexer, use the DB helper script:
+
+```bash
+./scripts/db-register-pool.sh add <POOL_ADDRESS> [network]
+./scripts/db-register-pool.sh remove <POOL_ADDRESS>
+```
+
 For Mainnet, replace `testnet` with `mainnet` and use a funded mainnet deployer identity.
 
 ## Troubleshooting
