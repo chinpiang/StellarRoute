@@ -12,6 +12,7 @@ export type SwapButtonState =
   | "insufficient_balance"
   | "high_price_impact"
   | "high_impact_warning"
+  | "slippage_ack_required"
   | "refreshing_quote"
   | "ready"
   | "executing"
@@ -80,6 +81,14 @@ export function SwapButton({
             "bg-destructive hover:bg-destructive/90 shadow-lg shadow-destructive/20",
             !prefersReducedMotion && "animate-pulse"
           ),
+        };
+      case "slippage_ack_required":
+        return {
+          label: "Acknowledge Slippage",
+          disabled: true,
+          variant: "destructive" as const,
+          icon: <AlertCircle className="mr-2 h-5 w-5" />,
+          className: "bg-destructive/10 text-destructive border-destructive/20 border",
         };
       case "executing":
         return {

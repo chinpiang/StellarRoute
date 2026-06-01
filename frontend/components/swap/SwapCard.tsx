@@ -23,15 +23,19 @@ import {
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useQuoteStreamStatus } from '@/hooks/useQuoteStreamStatus';
 import { useCompactMode } from '@/hooks/useCompactMode';
+import { useOptimisticSwap } from '@/hooks/useOptimisticSwap';
 import { useShareableQuote } from '@/hooks/useShareableQuote';
 import { ShareQuoteButton } from './ShareQuoteButton';
+import { SlippageRiskNotice } from './SlippageRiskNotice';
 import { NetworkMismatchBanner } from '@/components/shared/NetworkMismatchBanner';
-import { WalletCapabilitiesBanner } from '@/components/shared/WalletCapabilitiesBanner';
-import { useWallet } from '@/components/providers/wallet-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
 import { quoteExportToCsv, type QuoteExportPayload } from '@/lib/quote-export';
+import {
+  getSlippageAcknowledgmentKey,
+  requiresSlippageAcknowledgment,
+} from '@/lib/slippage';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import {
   Dialog,
@@ -89,6 +93,7 @@ export function SwapCard() {
   const [recoveryRequestedAt, setRecoveryRequestedAt] = useState<number | null>(null);
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [isHighSlippageAcknowledged, setIsHighSlippageAcknowledged] = useState(false);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const hiddenAtRef = useRef<number | null>(null);
   const recoveryReason: 'refresh' | 'wake' | null = wakeRecoveryOpen
@@ -99,6 +104,14 @@ export function SwapCard() {
   const requiresFreshQuote =
     recoveryRequestedAt !== null &&
     (quote.loading || quote.isStale);
+  const needsSlippageAcknowledgment =
+    requiresSlippageAcknowledgment(slippage) && !isHighSlippageAcknowledged;
+  const slippageAcknowledgmentKey = getSlippageAcknowledgmentKey({
+    amount: fromAmount,
+    fromToken,
+    slippage,
+    toToken,
+  });
 
   // Connection status indicator
   const { isOnline } = useOnlineStatus();
@@ -107,9 +120,6 @@ export function SwapCard() {
     error: quote.error,
     isOnline,
   });
-
-  // Wallet capabilities for swap permission checks
-  const { isConnected, capabilities } = useWallet();
 
   const optimistic = useOptimisticSwap({
     rollbackTarget: {
@@ -134,28 +144,22 @@ export function SwapCard() {
     if (quote.error) return "error";
     if (requiresFreshQuote) return "refreshing_quote";
     if (parseFloat(fromAmount) > parseFloat(fromBalance)) return "insufficient_balance";
+    if (needsSlippageAcknowledgment) return "slippage_ack_required";
     if (quote.priceImpact > 10) return "high_impact_warning";
     if (quote.loading) return "refreshing_quote";
     if (quote.isStale) return "error";
-    // Check capability: sign_transaction
-    if (capabilities) {
-      const signCap = capabilities.statuses.find(
-        (s) => s.capability === "sign_transaction"
-      );
-      if (signCap && !signCap.allowed) return "permission_blocked";
-    }
     return "ready";
   }, [
     fromAmount,
     fromBalance,
     isConnected,
+    optimistic.submitLock,
     quote.error,
     quote.isStale,
     quote.loading,
     quote.priceImpact,
     requiresFreshQuote,
-    capabilities,
-    optimistic.submitLock,
+    needsSlippageAcknowledgment,
   ]);
 
   useEffect(() => {
@@ -278,6 +282,10 @@ export function SwapCard() {
   }, [switchTokens]);
 
   useEffect(() => {
+    setIsHighSlippageAcknowledged(false);
+  }, [slippageAcknowledgmentKey]);
+
+  useEffect(() => {
     const onKeydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isEditable = target
@@ -360,9 +368,6 @@ export function SwapCard() {
     <div data-testid="swap-card" className="w-full max-w-[480px] mx-auto perspective-1000">
       {/* Network Mismatch Banner */}
       <NetworkMismatchBanner className="mb-4" />
-      
-      {/* Wallet Capabilities Banner */}
-      <WalletCapabilitiesBanner className="mb-4" />
       
       {/* Shared Quote Stale Warning */}
       {isSharedQuoteStale && refreshSharedQuote && (
@@ -515,6 +520,11 @@ export function SwapCard() {
                 isLoading={quote.loading}
                 onExportJson={() => handleExport("json")}
                 onExportCsv={() => handleExport("csv")}
+              />
+              <SlippageRiskNotice
+                slippage={slippage}
+                acknowledged={isHighSlippageAcknowledged}
+                onAcknowledgedChange={setIsHighSlippageAcknowledged}
               />
               <RouteDisplay
                 amountOut={selectedRoute?.expectedAmount ?? toAmount}
