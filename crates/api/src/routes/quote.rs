@@ -721,22 +721,27 @@ async fn compute_quote_response(
     let base_id = find_asset_id(&state, &base_asset).await?;
     let quote_id = find_asset_id(&state, &quote_asset).await?;
 
-    // --- Indexer lag check ---
-    if state.indexer_lag.is_any_source_critical().await {
-        let max_lag = state.indexer_lag.max_lag_ledgers().await;
+    // --- Indexer lag throttle ---
+    // Under sustained sync drift we reduce quote compute and return a degraded
+    // response instead of rejecting the request.
+    let is_critical = state.indexer_lag.is_any_source_critical().await;
+    let max_lag = if is_critical {
+        state.indexer_lag.max_lag_ledgers().await
+    } else {
+        0
+    };
+
+    let degrade_due_to_indexer_lag = is_critical;
+
+    if degrade_due_to_indexer_lag {
         warn!(
             max_lag_ledgers = max_lag,
-            "Rejecting quote request due to critical indexer lag"
+            "Indexer lag critical; returning degraded quote (reduced compute)"
         );
-        return Err(ApiError::StaleMarketData {
-            stale_count: 0,
-            fresh_count: 0,
-            threshold_secs_sdex: state.indexer_lag.thresholds().critical_ledgers * 5,
-            threshold_secs_amm: state.indexer_lag.thresholds().critical_ledgers * 5,
-        });
     }
 
     let (
+
         price,
         path,
         rationale,

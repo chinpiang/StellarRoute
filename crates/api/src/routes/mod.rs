@@ -12,6 +12,9 @@ pub mod orderbook;
 pub mod pairs;
 pub mod prometheus;
 pub mod quote;
+pub mod simulation_route;
+
+
 
 pub mod replay;
 pub mod routes_endpoint;
@@ -80,6 +83,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Canary routes
         .route("/api/v1/system/canary/report", get(canary::get_report))
         .route("/api/v1/system/canary/config", post(canary::update_config))
+        .route(
+            "/api/v1/simulate/route",
+            post(simulation_route::simulate_route_dry_run),
         // Contract registry routes
         .route(
             "/api/v1/contracts/registry",
