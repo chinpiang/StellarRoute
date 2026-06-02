@@ -1,16 +1,11 @@
 use serde::Deserialize;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HorizonMode {
+    #[default]
     Poll,
     Sse,
-}
-
-impl Default for HorizonMode {
-    fn default() -> Self {
-        Self::Poll
-    }
 }
 
 #[derive(Clone, Deserialize)]

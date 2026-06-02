@@ -12,6 +12,7 @@ use tracing::debug;
 async fn test_database_connection() {
     let config = IndexerConfig {
         stellar_horizon_url: "https://horizon-testnet.stellar.org".to_string(),
+        horizon_mode: stellarroute_indexer::config::HorizonMode::Poll,
         soroban_rpc_url: "https://soroban-testnet.stellar.org".to_string(),
         router_contract_address: "CDUMMYROUTER".to_string(),
         database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
@@ -57,6 +58,7 @@ async fn test_soroban_client_get_latest_ledger() {
 async fn test_amm_aggregator_initialization() {
     let config = IndexerConfig {
         stellar_horizon_url: "https://horizon-testnet.stellar.org".to_string(),
+        horizon_mode: stellarroute_indexer::config::HorizonMode::Poll,
         soroban_rpc_url: "https://soroban-testnet.stellar.org".to_string(),
         router_contract_address: "CDUMMYROUTER".to_string(),
         database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
@@ -104,6 +106,7 @@ async fn test_amm_aggregator_initialization() {
 async fn test_registry_seed_and_indexer_bootstrap() {
     let config = IndexerConfig {
         stellar_horizon_url: "https://horizon-testnet.stellar.org".to_string(),
+        horizon_mode: stellarroute_indexer::config::HorizonMode::Poll,
         soroban_rpc_url: "https://soroban-testnet.stellar.org".to_string(),
         router_contract_address: "CDUMMYROUTER".to_string(),
         database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
