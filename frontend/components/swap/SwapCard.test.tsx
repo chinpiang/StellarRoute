@@ -4,6 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi, Mock } from "vitest";
 import { SwapCard } from "./SwapCard";
 import { fireEvent } from "@testing-library/react";
 
+vi.mock('@/components/providers/wallet-provider', () => ({
+  useWallet: () => ({
+    networkMismatch: false,
+    network: 'testnet',
+    walletNetwork: 'testnet',
+    walletId: 'freighter',
+    disconnect: vi.fn(),
+  }),
+  useSettings: () => ({
+    slippage: 0.5,
+    deadline: 20,
+    rpcUrl: '',
+    horizonUrl: '',
+    setSlippage: vi.fn(),
+    setDeadline: vi.fn(),
+    setRpcUrl: vi.fn(),
+    setHorizonUrl: vi.fn(),
+  })
+}));
+
 function setNavigatorOnline(value: boolean) {
   Object.defineProperty(window.navigator, "onLine", {
     configurable: true,

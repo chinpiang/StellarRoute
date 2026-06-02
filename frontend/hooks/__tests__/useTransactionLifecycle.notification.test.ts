@@ -8,7 +8,7 @@
  * Requirements: 3.8
  */
 
-import { act, renderHook } from '@testing-library/react';
+import { waitFor, act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useTransactionLifecycle } from '../useTransactionLifecycle';
@@ -177,7 +177,9 @@ describe('useTransactionLifecycle — notification dispatch on terminal transiti
       await Promise.resolve();
     });
 
-    expect(dispatchTransactionNotification).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(dispatchTransactionNotification).toHaveBeenCalledOnce();
+    });
 
     const [params] = (
       dispatchTransactionNotification as ReturnType<typeof vi.fn>
