@@ -49,7 +49,7 @@ export function SwapCard() {
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
   const tradingPairContext = useOptionalTradingPair();
-  
+
   // Wrap useSearchParams in try-catch for SSR
   let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null =
     null;
@@ -93,7 +93,7 @@ export function SwapCard() {
   // Initialize from URL parameters on mount
   useEffect(() => {
     if (!parseParams) return;
-    
+
     const urlParams = parseParams();
     if (!urlParams) return;
 
@@ -128,7 +128,13 @@ export function SwapCard() {
     updateExtendedRouteDetails,
   } = useExpertSettings();
 
-  const { address: walletAddress, isConnected, walletId, network: walletAppNetwork, networkMismatch } = useWallet();
+  const {
+    address: walletAddress,
+    isConnected,
+    walletId,
+    network: walletAppNetwork,
+    networkMismatch,
+  } = useWallet();
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<AlternativeRoute | null>(
@@ -163,9 +169,15 @@ export function SwapCard() {
 
   const optimistic = useOptimisticSwap({
     signTransaction: walletId
-      ? (xdr) => signTransactionWithWallet(xdr, walletId, getNetworkPassphrase(walletAppNetwork))
+      ? (xdr) =>
+          signTransactionWithWallet(
+            xdr,
+            walletId,
+            getNetworkPassphrase(walletAppNetwork)
+          )
       : undefined,
-    submitTransaction: (signedXdr) => submitToHorizon(signedXdr, walletAppNetwork),
+    submitTransaction: (signedXdr) =>
+      submitToHorizon(signedXdr, walletAppNetwork),
     rollbackTarget: {
       setFromToken,
       setToToken,
@@ -184,20 +196,31 @@ export function SwapCard() {
     if (optimistic.status === 'pending') {
       toast.loading('Signing transaction...', { id: 'swap-toast' });
     } else if (optimistic.status === 'submitted') {
-      toast.loading('Transaction submitted, awaiting confirmation...', { id: 'swap-toast' });
+      toast.loading('Transaction submitted, awaiting confirmation...', {
+        id: 'swap-toast',
+      });
     } else if (optimistic.status === 'confirmed') {
       toast.success('Swap confirmed successfully!', { id: 'swap-toast' });
       setIsModalOpen(false);
       reset();
       setSelectedRoute(null);
     } else if (optimistic.status === 'failed') {
-      toast.error(optimistic.errorMessage || 'Swap failed. Please try again.', { id: 'swap-toast' });
+      toast.error(optimistic.errorMessage || 'Swap failed. Please try again.', {
+        id: 'swap-toast',
+      });
       setIsModalOpen(false);
     } else if (optimistic.status === 'dropped') {
       toast.error('Transaction timed out.', { id: 'swap-toast' });
       setIsModalOpen(false);
     }
-  }, [optimistic.status, optimistic.errorMessage, bypassConfirmation, isModalOpen, reset, setSelectedRoute]);
+  }, [
+    optimistic.status,
+    optimistic.errorMessage,
+    bypassConfirmation,
+    isModalOpen,
+    reset,
+    setSelectedRoute,
+  ]);
 
   // Mock balance
   const fromBalance = '100.00';
@@ -297,6 +320,12 @@ export function SwapCard() {
       setIsRecoveringSession(false);
     }
   }, [closeRecoveryModal, quote, recoveryReason, restorePending]);
+
+  // Handle "Swap Again" action: close modal but keep form state intact
+  const handleSwapAgain = useCallback(() => {
+    setIsModalOpen(false);
+    // keep tokens/amounts as-is so user can quickly modify and swap again
+  }, []);
 
   const handleConfirm = useCallback(() => {
     const snap: PreSubmitSnapshot = {
@@ -493,7 +522,8 @@ export function SwapCard() {
         className={cn(
           'relative overflow-hidden border-border/40 bg-background/60 backdrop-blur-xl shadow-2xl rounded-[32px] transition-all duration-500 hover:shadow-primary/5',
           isCompact && 'rounded-2xl',
-          expertMode && 'border-amber-500/30 hover:shadow-amber-500/10 shadow-amber-500/5'
+          expertMode &&
+            'border-amber-500/30 hover:shadow-amber-500/10 shadow-amber-500/5'
         )}
       >
         {/* Animated Background Gradients */}
@@ -769,6 +799,7 @@ export function SwapCard() {
             reset();
             setSelectedRoute(null);
           }}
+          onSwapAgain={handleSwapAgain}
         />
       )}
 
