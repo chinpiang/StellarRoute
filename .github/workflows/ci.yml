@@ -22,6 +22,8 @@ jobs:
           components: rustfmt, clippy
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+      - name: Cargo check workspace
+        run: cargo check --workspace
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy

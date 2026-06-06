@@ -65,6 +65,7 @@ impl Database {
         let migration_0007 =
             include_str!("../../migrations/0007_backfill_and_normalized_storage.sql");
         let migration_0008 = include_str!("../../migrations/0008_soroban_discovery_cursors.sql");
+        let migration_0012 = include_str!("../../migrations/0012_contract_swap_activity.sql");
 
         // Execute migrations in order
         info!("Running migration 0001_init.sql");
@@ -156,6 +157,18 @@ impl Database {
                 error!("Migration 0008 failed: {}", e);
                 IndexerError::DatabaseMigration(format!(
                     "Failed to run 0008_soroban_discovery_cursors.sql: {}",
+                    e
+                ))
+            })?;
+
+        info!("Running migration 0012_contract_swap_activity.sql");
+        sqlx::query(migration_0012)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Migration 0012 failed: {}", e);
+                IndexerError::DatabaseMigration(format!(
+                    "Failed to run 0012_contract_swap_activity.sql: {}",
                     e
                 ))
             })?;

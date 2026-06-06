@@ -1,14 +1,10 @@
-ckout //! Route dry-run simulation endpoint.
+//! Route dry-run simulation endpoint.
 //!
 //! This endpoint must be side-effect free: it performs no wallet signing and
 //! no on-chain execution. It only simulates route feasibility and produces
 //! diagnostics similar to `/api/v1/quote`.
 
-use axum::{
-    extract::State,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::ToSchema;
@@ -19,8 +15,8 @@ use stellarroute_routing::policy::RoutingPolicy;
 use crate::{
     error::{ApiError, Result},
     models::{
-        request::{AssetPath},
-        response::{ApiResponse, ExclusionDiagnostics, QuoteResponse, RouteCandidate, RouteHop},
+        request::AssetPath,
+        response::{ApiResponse, ExclusionDiagnostics, QuoteResponse},
     },
     state::AppState,
 };
@@ -116,9 +112,10 @@ pub async fn simulate_route_dry_run(
         return Err(ApiError::Validation("amount must be non-empty".to_string()));
     }
 
-    let amount: f64 = body.amount.parse().map_err(|_| {
-        ApiError::Validation("amount must be a valid number".to_string())
-    })?;
+    let amount: f64 = body
+        .amount
+        .parse()
+        .map_err(|_| ApiError::Validation("amount must be a valid number".to_string()))?;
     if !amount.is_finite() || amount <= 0.0 {
         return Err(ApiError::Validation(
             "amount must be greater than zero".to_string(),
@@ -210,9 +207,7 @@ pub async fn simulate_route_dry_run(
         // The quote pipeline returns `total` as amount_out (for sell).
         let hop_total: f64 = quote_resp.total.parse().unwrap_or(0.0);
         if hop_total <= 0.0 {
-            return Err(ApiError::NoRouteFound(
-                "no feasible hop output for provided hop chain".to_string(),
-            ));
+            return Err(ApiError::NoRouteFound);
         }
 
         current_amount = hop_total;
@@ -263,7 +258,6 @@ pub async fn simulate_route_dry_run(
     Ok(Json(envelope))
 }
 
-
 // Helper to convert request route into routing engine SwapPath.
 // The routing engine types do not currently exist in the API request model
 // (we keep this as a placeholder for upcoming implementation).
@@ -280,4 +274,3 @@ fn apply_slippage_overrides_to_policy(
     _overrides: &[SlippageOverride],
 ) {
 }
-

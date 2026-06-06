@@ -73,6 +73,11 @@ fn build_quote_webhook_payload(
         expired_at: quote_resp
             .expires_at
             .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        event: "quote.expired".to_string(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        base_asset: base.to_string(),
+        quote_asset: quote.to_string(),
+        amount_in: quote_resp.amount.clone(),
     }
 }
 
@@ -205,16 +210,15 @@ pub async fn get_quote(
 
                 // ── Audit log ────────────────────────────────────────────
                 let trace_id = crate::tracing_config::TraceContext::current().trace_id;
-                let inner_quote = quote_resp.quote().unwrap();
                 let audit_inputs = AuditInputs {
                     base: base.clone(),
                     quote: quote.clone(),
-                    amount: inner_quote.amount.clone(),
+                    amount: quote_resp.amount.clone(),
                     slippage_bps: params.slippage_bps(),
-                    quote_type: inner_quote.quote_type.clone(),
+                    quote_type: quote_resp.quote_type.clone(),
                 };
-                let audit_selected = build_audit_selected(inner_quote);
-                let audit_exclusions = build_audit_exclusions(inner_quote);
+                let audit_selected = build_audit_selected(&quote_resp);
+                let audit_exclusions = build_audit_exclusions(&quote_resp);
                 state.audit_writer.emit(
                     request_id.as_str(),
                     &trace_id,
@@ -226,13 +230,17 @@ pub async fn get_quote(
                     audit_exclusions,
                 );
 
-                let inner = quote_resp.into_quote().map_err(|e| {
-                    crate::error::ApiError::Internal(Arc::new(anyhow::anyhow!(
-                        "failed to deserialize cached quote: {e}"
-                    )))
-                })?;
-                let envelope = crate::models::ApiResponse::new(inner, request_id.to_string());
-                Ok(Json(envelope))
+                let data = if let Some(fields) = &selected_fields {
+                    build_sparse_quote_data(&quote_resp, fields)?
+                } else {
+                    serde_json::to_value(quote_resp)
+                        .map_err(|e| ApiError::Internal(Arc::new(anyhow::anyhow!(e))))?
+                };
+                let envelope = crate::models::ApiResponse::new(data, request_id.to_string());
+                crate::compression::json_response(
+                    &envelope,
+                    headers.get(axum::http::header::ACCEPT_ENCODING),
+                )
             }
             Err(e) => {
                 let (error_class, audit_outcome) = match &e {
@@ -691,7 +699,7 @@ pub(crate) async fn get_quote_inner(
     }
 }
 
-async fn compute_quote_response(
+pub(crate) async fn compute_quote_response(
     state: Arc<AppState>,
     base_asset: AssetPath,
     quote_asset: AssetPath,
@@ -741,7 +749,6 @@ async fn compute_quote_response(
     }
 
     let (
-
         price,
         path,
         rationale,
@@ -815,6 +822,7 @@ async fn compute_quote_response(
             params.slippage_bps(),
             quote_type_str,
             liquidity_snapshot,
+            crate::replay::artifact::DecisionGraphSnapshot::default(),
             health_config,
             &response,
             None,
@@ -822,6 +830,15 @@ async fn compute_quote_response(
     }
 
     Ok(response)
+}
+
+pub(crate) async fn get_quote_for_pair_dry_run(
+    state: Arc<AppState>,
+    base_asset: AssetPath,
+    quote_asset: AssetPath,
+    params: QuoteParams,
+) -> Result<QuoteResponse> {
+    compute_quote_response(state, base_asset, quote_asset, params, false).await
 }
 
 /// Get routing path for a trading pair
@@ -967,7 +984,7 @@ async fn find_best_price(
     );
 
     let fetch_result = fetch_guard.complete();
-    budget_tracker.record(PipelineStage::FetchCandidates, fetch_result);
+    budget_tracker.record(PipelineStage::FetchCandidates, fetch_result.clone());
     state
         .timeout_controller
         .record_latency(fetch_result.duration());
@@ -1270,7 +1287,7 @@ fn link_source_traces(candidates: &[DirectVenueCandidate]) {
     for candidate in candidates {
         if let Some(trace_context) = candidate.source_trace_context() {
             if let Some(otel_context) = trace_context.to_otel_context() {
-                Span::current().add_link(otel_context);
+                Span::current().add_link(otel_context.span().span_context().clone());
             }
         }
     }
@@ -1381,6 +1398,11 @@ async fn maybe_invalidate_quote_cache(
                             pair: format!("{base}/{quote}"),
                             reason: "cache_invalidated".to_string(),
                             expired_at: chrono::Utc::now().timestamp_millis(),
+                            event: "quote.expired".to_string(),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                            base_asset: base.to_string(),
+                            quote_asset: quote.to_string(),
+                            amount_in: String::new(),
                         };
 
                         state
@@ -1530,7 +1552,7 @@ async fn find_asset_id(state: &AppState, asset: &AssetPath) -> Result<uuid::Uuid
 }
 
 /// Convert AssetPath to AssetInfo
-fn asset_path_to_info(asset: &AssetPath) -> AssetInfo {
+pub(crate) fn asset_path_to_info(asset: &AssetPath) -> AssetInfo {
     if asset.asset_code == "native" {
         AssetInfo::native()
     } else {

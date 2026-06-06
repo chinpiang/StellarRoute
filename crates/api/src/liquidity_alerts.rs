@@ -265,8 +265,7 @@ fn pair_key(base: &AssetInfo, quote: &AssetInfo) -> String {
 fn normalize_pair_key(pair: &str) -> String {
     pair.split_once('/')
         .map(|(base, quote)| {
-            let (norm_base, norm_quote) =
-                stellarroute_routing::normalize_pair_owned(base, quote);
+            let (norm_base, norm_quote) = stellarroute_routing::normalize_pair_owned(base, quote);
             format!("{}/{}", norm_base, norm_quote)
         })
         .unwrap_or_else(|| stellarroute_routing::normalize_asset(pair))

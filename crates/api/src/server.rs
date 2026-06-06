@@ -111,7 +111,8 @@ impl Server {
                     };
 
                     {
-                        let mut state = AppState::with_cache_and_policy(db, cache, cache_policy.clone());
+                        let mut state =
+                            AppState::with_cache_and_policy(db, cache, cache_policy.clone());
                         state.admin_auth_token = config.admin_auth_token.clone();
                         (Arc::new(state), rate_limit)
                     }
@@ -121,7 +122,10 @@ impl Server {
                     {
                         let mut state = AppState::new_with_policy(db, cache_policy.clone());
                         state.admin_auth_token = config.admin_auth_token.clone();
-                        (Arc::new(state), RateLimitLayer::in_memory(EndpointConfig::default()))
+                        (
+                            Arc::new(state),
+                            RateLimitLayer::in_memory(EndpointConfig::default()),
+                        )
                     }
                 }
             }
@@ -130,7 +134,10 @@ impl Server {
             {
                 let mut state = AppState::new_with_policy(db, cache_policy);
                 state.admin_auth_token = config.admin_auth_token.clone();
-                (Arc::new(state), RateLimitLayer::in_memory(EndpointConfig::default()))
+                (
+                    Arc::new(state),
+                    RateLimitLayer::in_memory(EndpointConfig::default()),
+                )
             }
         };
 
