@@ -1,6 +1,8 @@
 //! API routes
 
 pub mod admin;
+pub mod admin_cache;
+pub mod assets;
 pub mod canary;
 pub mod contract_registry;
 pub mod health;
@@ -92,6 +94,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/v1/simulate/route",
             post(simulation_route::simulate_route_dry_run),
+        )
         // Contract registry routes
         .route(
             "/api/v1/contracts/registry",

@@ -1,4 +1,4 @@
-ckout //! Route dry-run simulation endpoint.
+//! Route dry-run simulation endpoint.
 //!
 //! This endpoint must be side-effect free: it performs no wallet signing and
 //! no on-chain execution. It only simulates route feasibility and produces
