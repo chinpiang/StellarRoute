@@ -1,13 +1,13 @@
-import { ArrowDown, ArrowRight, ChevronDown, Info } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowDown, ArrowRight, ChevronDown, Info } from 'lucide-react';
+import { useRef, useState } from 'react';
 
-import { Badge } from "@/components/ui/badge";
-import { useVirtualWindow } from "@/hooks/useVirtualWindow";
-import { useProgressiveLoadingTransition } from "@/hooks/useProgressiveLoadingTransition";
-import { useRouteSwitchTransition } from "@/hooks/useRouteSwitchTransition";
-import { RouteDisplaySkeleton } from "./RouteDisplaySkeleton";
+import { Badge } from '@/components/ui/badge';
+import { useVirtualWindow } from '@/hooks/useVirtualWindow';
+import { useProgressiveLoadingTransition } from '@/hooks/useProgressiveLoadingTransition';
+import { useRouteSwitchTransition } from '@/hooks/useRouteSwitchTransition';
+import { RouteDisplaySkeleton } from './RouteDisplaySkeleton';
 
-import { ConfidenceIndicator } from "./ConfidenceIndicator";
+import { ConfidenceIndicator } from './ConfidenceIndicator';
 
 export interface AlternativeRoute {
   id: string;
@@ -27,7 +27,7 @@ interface RouteDisplayProps {
   /** Route confidence score (0-100) */
   confidenceScore?: number;
   /** Market volatility level */
-  volatility?: "high" | "medium" | "low";
+  volatility?: 'high' | 'medium' | 'low';
   /** Show loading skeleton */
   isLoading?: boolean;
   /** Optional alternative route fixture data */
@@ -43,8 +43,8 @@ const ROUTE_ROW_HEIGHT = 44;
 const ROUTE_OVERSCAN = 2;
 
 function buildAlternativeRoutes(amountOut: string): AlternativeRoute[] {
-  const venues = ["AQUA Pool", "SDEX", "Blend Pool", "Phoenix AMM"];
-  const baseAmount = Number.parseFloat(amountOut || "0");
+  const venues = ['AQUA Pool', 'SDEX', 'Blend Pool', 'Phoenix AMM'];
+  const baseAmount = Number.parseFloat(amountOut || '0');
 
   return venues.map((venue, index) => ({
     id: `route-${index}`,
@@ -55,26 +55,26 @@ function buildAlternativeRoutes(amountOut: string): AlternativeRoute[] {
         ? [
             {
               id: `${index}-0`,
-              fromAsset: "XLM",
-              toAsset: "USDC",
+              fromAsset: 'XLM',
+              toAsset: 'USDC',
               venue,
-              fee: "0.00001 XLM",
+              fee: '0.00001 XLM',
             },
           ]
         : [
             {
               id: `${index}-0`,
-              fromAsset: "XLM",
-              toAsset: "AQUA",
-              venue: "SDEX",
-              fee: "0.00001 XLM",
+              fromAsset: 'XLM',
+              toAsset: 'AQUA',
+              venue: 'SDEX',
+              fee: '0.00001 XLM',
             },
             {
               id: `${index}-1`,
-              fromAsset: "AQUA",
-              toAsset: "USDC",
+              fromAsset: 'AQUA',
+              toAsset: 'USDC',
               venue,
-              fee: "0.00002 XLM",
+              fee: '0.00002 XLM',
             },
           ],
   }));
@@ -99,11 +99,11 @@ function AlternativeRouteButton({
       type="button"
       data-testid={`alternative-route-${route.id}`}
       aria-pressed={isSelected}
-      data-selected={isSelected ? "true" : undefined}
+      data-selected={isSelected ? 'true' : undefined}
       className={`w-full flex flex-wrap items-center justify-between transition-all duration-150 p-1 -mx-1 rounded hover:bg-muted/50 focus:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 gap-1 text-left active:scale-[0.99] ${
         isSelected
-          ? "opacity-100 ring-2 ring-primary/40 bg-muted/50"
-          : "opacity-60 hover:opacity-100 focus:opacity-100"
+          ? 'opacity-100 ring-2 ring-primary/40 bg-muted/50'
+          : 'opacity-60 hover:opacity-100 focus:opacity-100'
       }`}
       onClick={() => onSelect?.(route)}
     >
@@ -126,7 +126,7 @@ function AlternativeRouteButton({
 export function RouteDisplay({
   amountOut,
   confidenceScore = 85,
-  volatility = "low",
+  volatility = 'low',
   isLoading = false,
   alternativeRoutes,
   onSelect,
@@ -136,8 +136,11 @@ export function RouteDisplay({
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const routes = alternativeRoutes ?? buildAlternativeRoutes(amountOut);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const { animateInClass } = useRouteSwitchTransition(routeKey ?? selectedRouteId);
-  const { showSkeleton, contentClassName } = useProgressiveLoadingTransition(isLoading);
+  const { animateInClass } = useRouteSwitchTransition(
+    routeKey ?? selectedRouteId ?? undefined
+  );
+  const { showSkeleton, contentClassName } =
+    useProgressiveLoadingTransition(isLoading);
 
   const handleSelect = (route: AlternativeRoute) => {
     setSelectedRouteId(route.id);
@@ -161,7 +164,7 @@ export function RouteDisplay({
   const selectedRouteHops = selectedRoute?.hops ?? [];
   const totalRouteFee = selectedRouteHops.reduce(
     (sum, hop) => sum + parseFeeToNumber(hop.fee),
-    0,
+    0
   );
 
   if (showSkeleton) {
@@ -169,14 +172,20 @@ export function RouteDisplay({
   }
 
   return (
-    <div data-testid="route-display" className={`rounded-xl border border-border/50 p-4 space-y-4 transition-all duration-200 hover:border-border hover:shadow-sm focus-within:ring-2 focus-within:ring-primary/20 ${animateInClass} ${contentClassName}`}>
+    <div
+      data-testid="route-display"
+      className={`rounded-xl border border-border/50 p-4 space-y-4 transition-all duration-200 hover:border-border hover:shadow-sm focus-within:ring-2 focus-within:ring-primary/20 ${animateInClass} ${contentClassName}`}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-medium">Best Route</h4>
           <Info className="h-4 w-4 text-muted-foreground cursor-help" />
         </div>
         <div className="flex items-center gap-2">
-          <ConfidenceIndicator score={confidenceScore} volatility={volatility} />
+          <ConfidenceIndicator
+            score={confidenceScore}
+            volatility={volatility}
+          />
           <Badge
             variant="secondary"
             className="text-xs bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/20 transition-colors"
@@ -191,7 +200,7 @@ export function RouteDisplay({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md hover:bg-muted/50 focus:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all duration-150 active:scale-95"
           >
             <ChevronDown
-              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${showDetails ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${showDetails ? 'rotate-180' : ''}`}
             />
           </button>
         </div>
@@ -233,13 +242,13 @@ export function RouteDisplay({
         <div
           ref={scrollRef}
           data-testid="alternative-routes-scroll"
-          className={shouldVirtualize ? "max-h-44 overflow-auto pr-1" : ""}
+          className={shouldVirtualize ? 'max-h-44 overflow-auto pr-1' : ''}
         >
           {shouldVirtualize ? (
             <div
               style={{
                 height: virtualWindow.totalHeight,
-                position: "relative",
+                position: 'relative',
               }}
             >
               {visibleRoutes.map((route, index) => {
@@ -248,7 +257,7 @@ export function RouteDisplay({
                   <div
                     key={route.id}
                     style={{
-                      position: "absolute",
+                      position: 'absolute',
                       top: absoluteIndex * ROUTE_ROW_HEIGHT,
                       left: 0,
                       right: 0,
@@ -289,7 +298,8 @@ export function RouteDisplay({
               Per-hop route details
             </h5>
             <span className="text-xs text-muted-foreground">
-              {selectedRouteHops.length} hop{selectedRouteHops.length === 1 ? "" : "s"}
+              {selectedRouteHops.length} hop
+              {selectedRouteHops.length === 1 ? '' : 's'}
             </span>
           </div>
 

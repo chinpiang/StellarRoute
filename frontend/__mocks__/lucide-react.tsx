@@ -1,9 +1,9 @@
 // Minimal mock for lucide-react — used in vitest because the installed
 // package ships without a compiled CJS/ESM index entry.
-import * as React from "react";
+import * as React from 'react';
 
 const Icon = (props: React.SVGProps<SVGSVGElement>) =>
-  React.createElement("svg", { "data-testid": "icon", ...props });
+  React.createElement('svg', { 'data-testid': 'icon', ...props });
 
 // Icons used across the codebase
 export const ArrowDown = Icon;
@@ -79,3 +79,5 @@ export const Minimize2 = Icon;
 export const Star = Icon;
 export const Columns2 = Icon;
 export const LayoutList = Icon;
+export const Bell = Icon;
+export const BellOff = Icon;
