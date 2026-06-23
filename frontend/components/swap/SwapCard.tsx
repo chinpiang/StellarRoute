@@ -135,6 +135,7 @@ export function SwapCard() {
     walletId,
     network: walletAppNetwork,
     networkMismatch,
+    connect,
   } = useWallet();
 
   // Fetch real wallet balance for the selected from-asset
@@ -144,6 +145,27 @@ export function SwapCard() {
     isConnected,
     network: walletAppNetwork,
   });
+
+  // --- Issue #506: Memo State Management ---
+  const [showMemoField, setShowMemoField] = useState(false);
+  const [memoType, setMemoType] = useState<'text' | 'hash'>('text');
+  const [memoValue, setMemoValue] = useState('');
+  const memoError = useMemo(() => {
+    if (!memoValue) return null;
+    if (memoType === 'text') {
+      const byteLength = new TextEncoder().encode(memoValue).length;
+      if (byteLength > 28) {
+        return `Memo text exceeds 28 bytes (currently ${byteLength} bytes)`;
+      }
+    }
+    if (memoType === 'hash') {
+      const hexRegex = /^[0-9a-fA-F]{64}$/;
+      if (!hexRegex.test(memoValue)) {
+        return 'Hash memo must be exactly 64 hexadecimal characters';
+      }
+    }
+    return null;
+  }, [memoValue, memoType]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<AlternativeRoute | null>(
@@ -240,6 +262,7 @@ export function SwapCard() {
     if (optimistic.submitLock) return 'executing';
     if (!isConnected) return 'no_wallet';
     if (networkMismatch) return 'no_wallet'; // Swap disabled while network mismatch
+    if (memoError) return 'error'; // Block swap if there is a memo validation error
     if (!fromAmount || parseFloat(fromAmount) === 0) return 'no_amount';
     if (quote.error) return 'error';
     if (requiresFreshQuote) return 'refreshing_quote';
@@ -260,6 +283,7 @@ export function SwapCard() {
     quote.loading,
     quote.priceImpact,
     requiresFreshQuote,
+    memoError,
   ]);
 
   useEffect(() => {
@@ -758,12 +782,69 @@ export function SwapCard() {
             </span>
           )}
 
+          {/* --- Issue #506: Optional Memo Interface Module --- */}
+          <div className="space-y-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMemoField(!showMemoField);
+                if (!showMemoField) setMemoValue(''); 
+              }}
+              className="text-xs font-semibold text-primary/80 hover:text-primary transition-colors flex items-center gap-1.5 focus:outline-none"
+            >
+              <span>{showMemoField ? "✕ Remove Memo" : "+ Add Optional Memo"}</span>
+            </button>
+
+            {showMemoField && (
+              <div className="p-3 bg-muted/20 border border-border/20 rounded-2xl space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={memoType === 'text' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs rounded-lg flex-1"
+                    onClick={() => { setMemoType('text'); setMemoValue(''); }}
+                  >
+                    Text Memo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={memoType === 'hash' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs rounded-lg flex-1"
+                    onClick={() => { setMemoType('hash'); setMemoValue(''); }}
+                  >
+                    Hash Memo
+                  </Button>
+                </div>
+
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={memoValue}
+                    onChange={(e) => setMemoValue(e.target.value)}
+                    placeholder={memoType === 'text' ? "Enter text reference (max 28 bytes)" : "Enter 64-char hex string"}
+                    className={cn(
+                      "w-full bg-background/50 border rounded-xl px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/20",
+                      memoError ? "border-destructive focus:ring-destructive/20" : "border-border/60 focus:border-primary/40"
+                    )}
+                  />
+                  {memoError && (
+                    <p className="text-[11px] font-medium text-destructive px-1">
+                      {memoError}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Action Button */}
           <div className="pt-2">
             <SwapButton
               state={buttonState}
               onSwap={handleSwap}
-              onConnectWallet={() => {}} // Connection managed by WalletProvider
+              onConnectWallet={() => connect('freighter')} // Connection managed by WalletProvider
               isLoading={quote.loading}
             />
           </div>
