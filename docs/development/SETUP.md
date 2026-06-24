@@ -59,6 +59,7 @@ cd stellarroute
 
 ```bash
 docker-compose up -d
+./scripts/wait-for-services.sh
 ./scripts/wait-for-dbs.sh
 ```
 
@@ -67,6 +68,12 @@ This will start and verify the health of:
 - Redis on port 6379 (checked via `ping`)
 
 The `./scripts/wait-for-dbs.sh` script will block and verify both databases are fully initialized and healthy before you build or run the services.
+
+The wait script checks Postgres and Redis readiness before you run the API or indexer. If your machine needs more time to pull images or initialize volumes, extend the timeout:
+
+```bash
+TIMEOUT_SECONDS=120 ./scripts/wait-for-services.sh
+```
 
 ### 6. Build the Project
 
