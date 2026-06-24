@@ -1,6 +1,5 @@
 'use client';
 
-import { Metadata } from 'next';
 import { useState } from 'react';
 import { useSettings } from '@/components/providers/settings-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,16 +15,6 @@ import { HighContrastToggle } from '@/components/settings/HighContrastToggle';
 import { BrowserNotificationSettings } from '@/components/settings/BrowserNotificationSettings';
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 import { useSwapI18n } from '@/lib/swap-i18n';
-
-export const metadata: Metadata = {
-  title: 'Settings | StellarRoute',
-  description: 'Customize your StellarRoute experience with theme, language, and notification settings.',
-  openGraph: {
-    title: 'Settings | StellarRoute',
-    description: 'Personalize your StellarRoute interface and preferences.',
-    type: 'website',
-  },
-};
 
 export default function SettingsPage() {
   const { settings, updateSlippage, updateTheme, resetSettings } = useSettings();

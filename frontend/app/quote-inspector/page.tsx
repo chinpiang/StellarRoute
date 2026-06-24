@@ -1,19 +1,8 @@
 "use client";
 
-import { Metadata } from "next";
 import { QuoteInspector, VenueQuote } from "@/components/shared/QuoteInspector";
 import { toast } from "sonner";
 import { Header } from "@/components/Header";
-
-export const metadata: Metadata = {
-  title: "Quote Inspector | StellarRoute",
-  description: "Reconcile and compare quotes from multiple Stellar liquidity venues.",
-  openGraph: {
-    title: "Quote Inspector | StellarRoute",
-    description: "Analyze and reconcile quotes across SDEX and Soroban AMM pools.",
-    type: "website",
-  },
-};
 
 const MOCK_TIMESTAMP = 1713895200; // Fixed timestamp to satisfy purity rule
 
