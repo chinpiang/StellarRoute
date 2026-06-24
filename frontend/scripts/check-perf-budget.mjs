@@ -165,6 +165,7 @@ function printSummary(results, baseline) {
 
 async function main(argv) {
   const updateBaseline = argv.includes("--update-baseline");
+  const bundleOnly = argv.includes("--bundle-only");
 
   // Load config (exits on error)
   const config = loadConfig(CONFIG_PATH);
@@ -176,9 +177,14 @@ async function main(argv) {
   console.log("[perf-budget] Measuring bundle size...");
   const bundleSizeKb = parseBundleSize(BUILD_DIR);
 
-  // Measure TTI
-  console.log("[perf-budget] Measuring TTI...");
-  const ttiMs = runTTIMeasurement();
+  // Measure TTI (skipped in bundle-only mode — CI environments cannot run a production server)
+  let ttiMs = 0;
+  if (bundleOnly) {
+    console.log("[perf-budget] Skipping TTI measurement (--bundle-only)");
+  } else {
+    console.log("[perf-budget] Measuring TTI...");
+    ttiMs = runTTIMeasurement();
+  }
 
   // --update-baseline: capture new baseline and exit 0
   if (updateBaseline) {
@@ -200,7 +206,7 @@ async function main(argv) {
 
   // Compare thresholds
   const bundleResult = compareThreshold(bundleSizeKb, config.bundleSizeKb);
-  const ttiResult = compareThreshold(ttiMs, config.ttiMs);
+  const ttiResult = bundleOnly ? { passed: true } : compareThreshold(ttiMs, config.ttiMs);
   const { overallPassed } = computeOverallResult(bundleResult.passed, ttiResult.passed);
 
   // Build results object
