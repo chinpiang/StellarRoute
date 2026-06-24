@@ -6,17 +6,20 @@ import type { TradeParams } from '@/hooks/useTransactionLifecycle';
 
 // ── Shared mock quote ────────────────────────────────────────────────────────
 
+const MOCK_WALLET =
+  'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 const baseTradeParams: TradeParams = {
   fromAsset: 'XLM',
   toAsset: 'USDC',
   fromAmount: '500.00',
   toAmount: '52.47',
+  exchangeRate: '0.1049',
+  priceImpact: '0.12',
   minReceived: '52.21 USDC',
-  exchangeRate: '0.1049 XLM/USDC',
-  priceImpact: '0.05%',
-  networkFee: '0.0001 XLM',
+  networkFee: '0.00001 XLM',
   routePath: [],
-  walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  walletAddress: MOCK_WALLET,
 };
 
 const splitRouteTradeParams: TradeParams = {
@@ -24,25 +27,12 @@ const splitRouteTradeParams: TradeParams = {
   toAsset: 'BTC',
   fromAmount: '10000.00',
   toAmount: '0.01662',
+  exchangeRate: '0.000001662',
+  priceImpact: '0.45',
   minReceived: '0.01645 BTC',
-  exchangeRate: '0.00000166 XLM/BTC',
-  priceImpact: '0.2%',
-  networkFee: '0.0002 XLM',
-  routePath: [
-    {
-      from_asset: { asset_type: 'native' },
-      to_asset: { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' },
-      price: '0.105',
-      source: 'sdex'
-    },
-    {
-      from_asset: { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5' },
-      to_asset: { asset_type: 'credit_alphanum12', asset_code: 'BTC', asset_issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' },
-      price: '0.0000158',
-      source: 'amm:phoenix'
-    }
-  ],
-  walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  networkFee: '0.00001 XLM',
+  routePath: [],
+  walletAddress: MOCK_WALLET,
 };
 
 const highSlippageTradeParams: TradeParams = {
@@ -50,12 +40,12 @@ const highSlippageTradeParams: TradeParams = {
   toAsset: 'AQUA',
   fromAmount: '50000.00',
   toAmount: '1750000.00',
+  exchangeRate: '35.0',
+  priceImpact: '8.5',
   minReceived: '1662500.00 AQUA',
-  exchangeRate: '35.0 XLM/AQUA',
-  priceImpact: '5.2%',
-  networkFee: '0.0001 XLM',
+  networkFee: '0.00001 XLM',
   routePath: [],
-  walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  walletAddress: MOCK_WALLET,
 };
 
 // ── Shared no-op handlers ────────────────────────────────────────────────────

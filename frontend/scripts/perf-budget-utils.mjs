@@ -292,12 +292,11 @@ import path from "path";
  *   - The /swap route is not present in the manifest
  *
  * @param {string} buildDir  Path to the .next/ directory
- * @returns {number}         Total gzip size in KB
+ * @returns {{ totalKb: number, asyncChunks: Array<{ name: string, sizeKb: number }> }}
  */
 export function parseBundleSize(buildDir) {
   const manifestPath = path.join(buildDir, "build-manifest.json");
 
-  // Check .next/ exists
   if (!fs.existsSync(buildDir)) {
     console.error(
       `[perf-budget] ERROR: Build directory not found at "${buildDir}". Run \`npm run build\` first.`
@@ -305,7 +304,6 @@ export function parseBundleSize(buildDir) {
     process.exit(1);
   }
 
-  // Check build-manifest.json exists
   if (!fs.existsSync(manifestPath)) {
     console.error(
       `[perf-budget] ERROR: build-manifest.json not found at "${manifestPath}". Run \`npm run build\` first.`
@@ -325,7 +323,6 @@ export function parseBundleSize(buildDir) {
 
   const pages = manifest.pages ?? {};
 
-  // Check /swap route exists in manifest
   if (!pages["/swap"]) {
     const available = Object.keys(pages).join(", ");
     console.error(
@@ -334,32 +331,43 @@ export function parseBundleSize(buildDir) {
     process.exit(1);
   }
 
-  // Collect all unique JS chunks for /swap + /_app (shared)
   const swapChunks = new Set([
     ...(pages["/swap"] ?? []),
     ...(pages["/_app"] ?? []),
   ]);
 
   let totalBytes = 0;
+  const asyncChunks = [];
+  
   for (const chunk of swapChunks) {
     if (!chunk.endsWith(".js")) continue;
-    // Chunks are relative paths like "_next/static/chunks/foo.js"
-    // Strip the leading "_next/" since buildDir is already .next/
+    
     const relativePath = chunk.startsWith("_next/")
       ? chunk.slice("_next/".length)
       : chunk;
     const filePath = path.join(buildDir, relativePath);
 
     if (!fs.existsSync(filePath)) {
-      // Skip missing chunks (e.g. already-hashed files that moved)
       continue;
     }
 
     const content = fs.readFileSync(filePath);
-    totalBytes += zlib.gzipSync(content).length;
+    const gzipBytes = zlib.gzipSync(content).length;
+    totalBytes += gzipBytes;
+    
+    const isAsync = relativePath.includes("chunks/") && !relativePath.includes("framework") && !relativePath.includes("main");
+    if (isAsync) {
+      asyncChunks.push({
+        name: relativePath,
+        sizeKb: gzipBytes / 1024,
+      });
+    }
   }
 
-  return totalBytes / 1024; // KB
+  return {
+    totalKb: totalBytes / 1024,
+    asyncChunks: asyncChunks.sort((a, b) => b.sizeKb - a.sizeKb),
+  };
 }
 
 // ---------------------------------------------------------------------------

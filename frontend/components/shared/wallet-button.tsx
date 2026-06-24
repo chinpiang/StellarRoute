@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { useWallet } from '@/hooks/useWallet';
+import { useWallet } from '@/components/providers/wallet-provider';
 import { useWalletOnboarding } from '@/hooks/useWalletOnboarding';
 import { WalletConnectionOnboarding } from '@/components/modals/WalletConnectionOnboarding';
 import { AccountSwitcher } from './account-switcher';

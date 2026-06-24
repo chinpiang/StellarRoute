@@ -50,8 +50,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  getSwapCardStoryPresentation,
+  type SwapCardStoryFixture,
+} from './swapCardStory';
 
-export function SwapCard() {
+export interface SwapCardProps {
+  /** Ladle story fixture — drives deterministic UI states for visual review. */
+  storyFixture?: SwapCardStoryFixture;
+}
+
+export function SwapCard({ storyFixture }: SwapCardProps = {}) {
+  const storyPresentation = storyFixture
+    ? getSwapCardStoryPresentation(storyFixture)
+    : null;
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
   const tradingPairContext = useOptionalTradingPair();
@@ -422,6 +434,29 @@ export function SwapCard() {
     memoError,
   ]);
 
+  const displayButtonState =
+    storyPresentation?.buttonState ?? buttonState;
+  const displayQuoteLoading =
+    storyPresentation?.quoteLoading ?? quote.loading;
+  const displayQuoteStale = storyPresentation?.quoteStale ?? quote.isStale;
+  const displayQuoteError = storyPresentation?.quoteError ?? quote.error;
+  const displayQuotePriceImpact =
+    storyPresentation?.quotePriceImpact ?? quote.priceImpact;
+  const displayToAmount = storyPresentation?.toAmount ?? toAmount;
+  const displayFormattedRate =
+    storyPresentation?.formattedRate ?? formattedRate;
+  const displayIsModalOpen =
+    storyPresentation?.confirmModalOpen ?? isModalOpen;
+  const displayOptimisticStatus =
+    storyPresentation?.optimisticStatus ?? optimistic.status;
+  const displayTradeParams =
+    storyPresentation?.tradeParams ?? optimistic.tradeParams;
+
+  useEffect(() => {
+    if (!storyPresentation?.seedFromAmount) return;
+    setFromAmount(storyPresentation.seedFromAmount);
+  }, [storyPresentation?.seedFromAmount, setFromAmount]);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
@@ -762,18 +797,15 @@ export function SwapCard() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => {
-                  quote.refresh();
-                  routesState.refresh();
-                }}
-                disabled={quote.loading}
+                onClick={() => quote.refresh()}
+                disabled={displayQuoteLoading}
                 aria-label={t('swap.card.refreshQuote')}
                 className="h-9 w-9 rounded-xl hover:bg-muted/80"
               >
                 <RefreshCw
                   className={cn(
                     'h-4.5 w-4.5 text-muted-foreground',
-                    quote.loading && 'animate-spin'
+                    displayQuoteLoading && 'animate-spin'
                   )}
                 />
               </Button>
@@ -833,7 +865,7 @@ export function SwapCard() {
               <div className="flex justify-between items-start mb-1">
                 <AmountInput
                   label={t('swap.pair.youReceive')}
-                  value={selectedRoute?.expectedAmount ?? toAmount}
+                  value={selectedRoute?.expectedAmount ?? displayToAmount}
                   readOnly
                   placeholder="0.00"
                   className="flex-1"
@@ -849,7 +881,7 @@ export function SwapCard() {
           </div>
 
           {/* Info Panels (Conditional) */}
-          {parseFloat(fromAmount) > 0 && (
+          {(parseFloat(fromAmount) > 0 || storyPresentation?.seedFromAmount) && (
             <div
               className={cn(
                 'space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500',
@@ -857,24 +889,20 @@ export function SwapCard() {
               )}
             >
               <PriceInfoPanel
-                rate={formattedRate}
-                priceImpact={quote.priceImpact}
-                minReceived={`${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
+                rate={displayFormattedRate}
+                priceImpact={displayQuotePriceImpact}
+                minReceived={`${(parseFloat(displayToAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
                 networkFee={
                   quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM'
                 }
-                isLoading={quote.loading}
+                isLoading={displayQuoteLoading}
                 onExportJson={() => handleExport('json')}
                 onExportCsv={() => handleExport('csv')}
               />
               <RouteDisplay
-                amountOut={selectedRoute?.expectedAmount ?? toAmount}
-                isLoading={isRoutesLoading}
-                alternativeRoutes={mergedAlternativeRoutes}
-                onSelect={handleRouteSelect}
-                selectedRouteId={selectedRoute?.id ?? null}
-                fromAssetCode={fromSymbol}
-                toAssetCode={toSymbol}
+                amountOut={selectedRoute?.expectedAmount ?? displayToAmount}
+                isLoading={displayQuoteLoading}
+                onSelect={setSelectedRoute}
               />
               {/* Share Quote Button */}
               <div className="flex justify-end">
@@ -892,7 +920,7 @@ export function SwapCard() {
           )}
 
           {/* Stale Indicator */}
-          {quote.isStale && (
+          {displayQuoteStale && (
             <span
               data-testid="stale-indicator"
               className="text-xs text-amber-500 font-medium"
@@ -998,17 +1026,17 @@ export function SwapCard() {
           {/* Action Button */}
           <div className="pt-2">
             <SwapButton
-              state={buttonState}
+              state={displayButtonState}
               onSwap={handleSwap}
               onConnectWallet={() => connect('freighter')} // Connection managed by WalletProvider
-              isLoading={quote.loading}
+              isLoading={displayQuoteLoading}
             />
           </div>
 
           {/* Status/Error Messages */}
-          {quote.error && (
+          {displayQuoteError && (
             <p className="text-center text-xs font-medium text-destructive animate-pulse">
-              {quote.error.message}
+              {displayQuoteError.message}
             </p>
           )}
         </CardContent>
@@ -1031,11 +1059,11 @@ export function SwapCard() {
 
       {!bypassConfirmation && (
         <TransactionConfirmationModal
-          isOpen={isModalOpen}
-          status={optimistic.status}
+          isOpen={displayIsModalOpen}
+          status={displayOptimisticStatus}
           txHash={optimistic.txHash}
           errorMessage={optimistic.errorMessage}
-          tradeParams={optimistic.tradeParams}
+          tradeParams={displayTradeParams}
           onConfirm={() => {}}
           onCancel={() => {
             optimistic.cancel();
