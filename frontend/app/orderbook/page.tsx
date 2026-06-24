@@ -1,6 +1,5 @@
 "use client";
 
-import { Metadata } from "next";
 import { MarketDepthChart } from "./MarketDepthChart";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,16 +10,6 @@ import { useOptionalTradingPair } from "@/contexts/TradingPairContext";
 import { useVirtualWindow } from "@/hooks/useVirtualWindow";
 import type { OrderbookEntry, TradingPair } from "@/types";
 import { cn } from "@/lib/utils";
-
-export const metadata: Metadata = {
-  title: "Orderbook | StellarRoute",
-  description: "Live order book and market depth for Stellar trading pairs.",
-  openGraph: {
-    title: "Orderbook | StellarRoute",
-    description: "Real-time market depth and order book data for Stellar DEX pairs.",
-    type: "website",
-  },
-};
 
 const ROW_HEIGHT = 36;
 const OVERSCAN = 5;
