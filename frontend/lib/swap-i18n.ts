@@ -86,6 +86,7 @@ export type SwapTranslationKey =
   | "swap.cta.swapping"
   | "swap.cta.errorFetchingQuote"
   | "swap.card.refreshQuote"
+  | "swap.card.diagnostics"
   | "swap.card.outdated"
   | "swap.card.recoveringQuote"
   | "swap.card.recoveringQuoteCountdown"
@@ -190,6 +191,7 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.cta.swapping": "Swapping...",
     "swap.cta.errorFetchingQuote": "Error fetching quote",
     "swap.card.refreshQuote": "Refresh quote",
+    "swap.card.diagnostics": "View quote diagnostics",
     "swap.card.outdated": "Quote outdated — refresh for latest price",
     "swap.card.recoveringQuote": "Retrying quote...",
     "swap.card.recoveringQuoteCountdown": "Retrying quote in {seconds}s...",
@@ -285,6 +287,7 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.cta.swapping": "兑换中...",
     "swap.cta.errorFetchingQuote": "获取报价失败",
     "swap.card.refreshQuote": "刷新报价",
+    "swap.card.diagnostics": "查看报价诊断信息",
     "swap.card.outdated": "报价已过期——请刷新获取最新价格",
     "swap.card.recoveringQuote": "正在重试报价...",
     "swap.card.recoveringQuoteCountdown": "{seconds} 秒后重试报价...",

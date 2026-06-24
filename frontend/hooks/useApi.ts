@@ -230,9 +230,11 @@ export function useQuote(
 
   return useFetch(
     (signal) =>
-      stellarRouteClient.getQuote(base, quote, debouncedAmount, type, {
-        signal,
-      }),
+      stellarRouteClient
+        .getQuote(base, quote, debouncedAmount, type, {
+          signal,
+        })
+        .then((result) => result.quote),
     [base, quote, debouncedAmount, type],
     { refreshIntervalMs, skip },
   );

@@ -40,6 +40,7 @@ export const Check = Icon;
 export const Clock = Icon;
 export const Clock3 = Icon;
 export const Copy = Icon;
+export const Stethoscope = Icon;
 export const History = Icon;
 export const Search = Icon;
 export const Download = Icon;

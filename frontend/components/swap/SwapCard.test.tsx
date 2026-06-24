@@ -3,9 +3,76 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi, Mock } from 'vitest';
 import { SwapCard } from './SwapCard';
 import { fireEvent } from '@testing-library/react';
+import * as useSwapStateModule from '@/hooks/useSwapState';
 
 import { WalletProvider } from '@/components/providers/wallet-provider';
 import { SettingsProvider } from '@/components/providers/settings-provider';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+  useSearchParams: () => ({
+    get: vi.fn(),
+  }),
+}));
+
+vi.mock('./ShareQuoteButton', () => ({
+  ShareQuoteButton: () => <button data-testid="mock-share-quote-button">Share</button>,
+}));
+
+vi.mock('@/components/providers/wallet-provider', () => {
+  const React = require('react');
+  return {
+    WalletProvider: ({ children }: any) => <>{children}</>,
+    useWallet: () => {
+      const [connected, setConnected] = React.useState(false);
+      const [address, setAddress] = React.useState(null);
+
+      const connect = React.useCallback(async (walletId: string) => {
+        setConnected(true);
+        setAddress('GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+      }, []);
+
+      const disconnect = React.useCallback(() => {
+        setConnected(false);
+        setAddress(null);
+      }, []);
+
+      return {
+        address,
+        isConnected: connected,
+        walletId: connected ? 'freighter' : null,
+        network: 'testnet',
+        networkMismatch: false,
+        connect,
+        disconnect,
+        reconnect: React.useCallback(async () => {}, []),
+        setNetwork: React.useCallback(() => {}, []),
+        autoReconnectPreferred: true,
+        setAutoReconnectPreferred: React.useCallback(() => {}, []),
+        refreshWallets: React.useCallback(async () => {}, []),
+        refreshAccount: React.useCallback(async () => {}, []),
+        accountSwitchState: { isDetecting: false, hasChanged: false, previousAddress: null },
+        isTransactionPending: false,
+        setTransactionPending: React.useCallback(() => {}, []),
+        capabilities: null,
+        refreshCapabilities: React.useCallback(async () => {}, []),
+        syncMismatch: false,
+        resyncWallet: React.useCallback(async () => {}, []),
+        dismissSyncMismatch: React.useCallback(() => {}, []),
+      };
+    },
+  };
+});
+
+vi.mock('@/lib/wallet', () => ({
+  connectWallet: vi.fn(),
+  disconnectWallet: vi.fn(),
+  getAvailableWallets: vi.fn(),
+  refreshWalletSession: vi.fn(),
+  signTransactionWithWallet: vi.fn(),
+}));
 
 function renderWithProviders(ui: React.ReactElement) {
   return render(
@@ -25,8 +92,22 @@ function setNavigatorOnline(value: boolean) {
 describe('SwapCard network resilience and states', () => {
   beforeEach(() => {
     localStorage.clear();
-    global.fetch = vi.fn(() =>
-      Promise.resolve({
+    global.fetch = vi.fn((url: string) => {
+      if (typeof url === 'string' && url.includes('/accounts/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              balances: [
+                {
+                  balance: '50.0000000',
+                  asset_type: 'native',
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
@@ -36,8 +117,8 @@ describe('SwapCard network resilience and states', () => {
             price: '0.95',
             amount: '10',
           }),
-      })
-    ) as Mock;
+      });
+    }) as Mock;
   });
 
   afterEach(() => {
@@ -77,7 +158,7 @@ describe('SwapCard network resilience and states', () => {
     fireEvent.change(payInput, { target: { value: '10' } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /^swap$/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /review swap/i })).toBeEnabled();
     });
   });
 
@@ -342,6 +423,15 @@ describe('SwapCard Wallet Balance Integration (#644/#705)', () => {
   });
 
   it('MAX button sets amount to full balance for non-native assets', async () => {
+    const originalUseSwapState = useSwapStateModule.useSwapState;
+    vi.spyOn(useSwapStateModule, 'useSwapState').mockImplementation(() => {
+      const state = originalUseSwapState();
+      return {
+        ...state,
+        fromToken: 'USDC:GATEMHCCKCY67ZUCKTROYN24ZYT5GK4EQZ65JJLDHKHRUZI3EUEKMTCH',
+      };
+    });
+
     global.fetch = vi.fn((url: string) => {
       if (url.includes('/accounts/')) {
         return Promise.resolve({
@@ -548,13 +638,8 @@ describe('SwapCard Wallet Balance Integration (#644/#705)', () => {
 
     // Swap button should be disabled with insufficient balance message
     await waitFor(() => {
-      const swapButton = screen.getByRole('button', { name: /swap/i });
+      const swapButton = screen.getByRole('button', { name: /insufficient balance/i });
       expect(swapButton).toBeDisabled();
-      // Check for insufficient balance state or message
-      const insufficientLabel = screen.queryByText(/insufficient balance/i);
-      expect(
-        insufficientLabel || swapButton.getAttribute('aria-label')
-      ).toBeDefined();
     });
   });
 
