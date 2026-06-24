@@ -1,8 +1,9 @@
-export type FeatureFlagName = "routesBeta" | "batchSwaps";
+export type FeatureFlagName = "routesBeta" | "batchSwaps" | "analytics";
 
 export interface FeatureFlags {
   routesBeta: boolean;
   batchSwaps: boolean;
+  analytics: boolean;
 }
 
 type PartialFeatureFlags = Partial<FeatureFlags>;
@@ -16,11 +17,13 @@ declare global {
 const DEFAULT_FLAGS: FeatureFlags = {
   routesBeta: false,
   batchSwaps: false,
+  analytics: true,
 };
 
 const ENV_FLAG_MAP: Record<FeatureFlagName, string> = {
   routesBeta: "NEXT_PUBLIC_FEATURE_ROUTES_BETA",
   batchSwaps: "NEXT_PUBLIC_FEATURE_BATCH_SWAPS",
+  analytics: "NEXT_PUBLIC_FEATURE_ANALYTICS",
 };
 
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
@@ -42,10 +45,12 @@ function parseBooleanFlag(value: string | undefined): boolean | undefined {
 function getEnvFlags(): PartialFeatureFlags {
   const routesBeta = parseBooleanFlag(process.env[ENV_FLAG_MAP.routesBeta]);
   const batchSwaps = parseBooleanFlag(process.env[ENV_FLAG_MAP.batchSwaps]);
+  const analytics = parseBooleanFlag(process.env[ENV_FLAG_MAP.analytics]);
 
   const flags: PartialFeatureFlags = {};
   if (routesBeta !== undefined) flags.routesBeta = routesBeta;
   if (batchSwaps !== undefined) flags.batchSwaps = batchSwaps;
+  if (analytics !== undefined) flags.analytics = analytics;
 
   return flags;
 }

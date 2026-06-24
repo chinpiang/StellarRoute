@@ -11,9 +11,11 @@ describe("feature flags", () => {
       .__STELLAR_ROUTE_FLAGS__;
     delete process.env.NEXT_PUBLIC_FEATURE_ROUTES_BETA;
     delete process.env.NEXT_PUBLIC_FEATURE_BATCH_SWAPS;
+    delete process.env.NEXT_PUBLIC_FEATURE_ANALYTICS;
 
     expect(getFeatureFlag("routesBeta")).toBe(false);
     expect(getFeatureFlag("batchSwaps")).toBe(false);
+    expect(getFeatureFlag("analytics")).toBe(true);
   });
 
   it("reads env-backed defaults when enabled", () => {

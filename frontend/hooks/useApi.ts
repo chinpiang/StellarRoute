@@ -27,6 +27,8 @@ import type {
   QuoteType,
   RoutesResponse,
   TradingPair,
+  CacheMetricsResponse,
+  PoolStatsResponse,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -269,6 +271,32 @@ export function useHealth(
     (signal) => stellarRouteClient.getHealth({ signal }),
     [],
     { refreshIntervalMs },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// useCacheMetrics / usePoolStats — platform metrics for analytics dashboard
+// ---------------------------------------------------------------------------
+
+export function useCacheMetrics(
+  refreshIntervalMs = 30_000,
+  skip = false,
+): UseApiState<CacheMetricsResponse> & { refresh: () => void } {
+  return useFetch(
+    (signal) => stellarRouteClient.getCacheMetrics({ signal }),
+    [],
+    { refreshIntervalMs, skip },
+  );
+}
+
+export function usePoolStats(
+  refreshIntervalMs = 30_000,
+  skip = false,
+): UseApiState<PoolStatsResponse> & { refresh: () => void } {
+  return useFetch(
+    (signal) => stellarRouteClient.getPoolStats({ signal }),
+    [],
+    { refreshIntervalMs, skip },
   );
 }
 

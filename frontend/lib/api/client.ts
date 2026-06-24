@@ -10,8 +10,10 @@
 
 import type {
   ApiResponse,
+  CacheMetricsResponse,
   HealthStatus,
   Orderbook,
+  PoolStatsResponse,
   PriceHistoryResponse,
   PairsResponse,
   PriceQuote,
@@ -186,6 +188,16 @@ export class StellarRouteClient {
   /** GET /health — overall service health check */
   getHealth(opts?: FetchOptions): Promise<HealthStatus> {
     return this.request<HealthStatus>('/health', opts);
+  }
+
+  /** GET /metrics/cache — quote cache hit/miss metrics */
+  getCacheMetrics(opts?: FetchOptions): Promise<CacheMetricsResponse> {
+    return this.request<CacheMetricsResponse>('/metrics/cache', opts);
+  }
+
+  /** GET /metrics/pool — database connection pool statistics */
+  getPoolStats(opts?: FetchOptions): Promise<PoolStatsResponse> {
+    return this.request<PoolStatsResponse>('/metrics/pool', opts);
   }
 
   /** GET /api/v1/pairs — list all trading pairs */

@@ -2,32 +2,83 @@ import type { Story } from '@ladle/react';
 import { useState } from 'react';
 import { TransactionConfirmationModal } from './TransactionConfirmationModal';
 import type { TransactionConfirmationModalProps } from './TransactionConfirmationModal';
+import type { TradeParams } from '@/hooks/useTransactionLifecycle';
+
+const nativeAsset = {
+  asset_type: 'native' as const,
+  asset_code: undefined,
+  asset_issuer: undefined,
+};
+
+const usdcAsset = {
+  asset_type: 'credit_alphanum4' as const,
+  asset_code: 'USDC',
+  asset_issuer: 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN',
+};
+
+const mockRoutePath: TradeParams['routePath'] = [
+  {
+    from_asset: nativeAsset,
+    to_asset: usdcAsset,
+    price: '0.1049',
+    source: 'sdex',
+  },
+];
+
+function makeTradeParams(
+  overrides: Partial<TradeParams> = {},
+): TradeParams {
+  return {
+    fromAsset: 'XLM',
+    toAsset: 'USDC',
+    fromAmount: '500.00',
+    toAmount: '52.47',
+    exchangeRate: '0.1049',
+    priceImpact: '0.12%',
+    minReceived: '52.21 USDC',
+    networkFee: '0.00001 XLM',
+    routePath: mockRoutePath,
+    walletAddress: 'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    ...overrides,
+  };
+}
 
 // ── Shared mock quote ────────────────────────────────────────────────────────
 
-const baseTradeParams = {
-  fromAsset: 'XLM',
-  toAsset: 'USDC',
-  fromAmount: '500.00',
-  toAmount: '52.47',
-  minReceived: '52.21 USDC',
-};
+const baseTradeParams = makeTradeParams();
 
-const splitRouteTradeParams = {
-  fromAsset: 'XLM',
+const splitRouteTradeParams = makeTradeParams({
   toAsset: 'BTC',
   fromAmount: '10000.00',
   toAmount: '0.01662',
   minReceived: '0.01645 BTC',
-};
+  routePath: [
+    {
+      from_asset: nativeAsset,
+      to_asset: usdcAsset,
+      price: '0.1049',
+      source: 'sdex',
+    },
+    {
+      from_asset: usdcAsset,
+      to_asset: {
+        asset_type: 'credit_alphanum4',
+        asset_code: 'BTC',
+        asset_issuer: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ2345678901234567890',
+      },
+      price: '0.0000166',
+      source: 'amm:GPOOL123',
+    },
+  ],
+});
 
-const highSlippageTradeParams = {
-  fromAsset: 'XLM',
+const highSlippageTradeParams = makeTradeParams({
   toAsset: 'AQUA',
   fromAmount: '50000.00',
   toAmount: '1750000.00',
   minReceived: '1662500.00 AQUA',
-};
+  priceImpact: '4.8%',
+});
 
 // ── Shared no-op handlers ────────────────────────────────────────────────────
 

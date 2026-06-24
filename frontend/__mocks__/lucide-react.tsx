@@ -82,3 +82,5 @@ export const Columns2 = Icon;
 export const LayoutList = Icon;
 export const Bell = Icon;
 export const BellOff = Icon;
+export const Activity = Icon;
+export const Database = Icon;
