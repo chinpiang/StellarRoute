@@ -85,10 +85,9 @@ export class StellarRouteClient {
   private readonly retries: number = 2;
 
   constructor(baseUrl?: string) {
-    this.baseUrl =
-      (baseUrl ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080')
-        // Strip trailing slash so we can always prepend / paths uniformly
-        .replace(/\/$/, '');
+    const proxyEnabled = process.env.NEXT_PUBLIC_API_PROXY === 'true';
+    const resolved = baseUrl ?? (proxyEnabled ? '' : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'));
+    this.baseUrl = resolved.replace(/\/$/, '');
   }
 
   // -------------------------------------------------------------------------
