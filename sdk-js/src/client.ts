@@ -7,6 +7,8 @@ import type {
   PriceQuote,
   QuoteRequestItem,
   BatchQuoteResponse,
+  OrderbookRequestItem,
+  BatchOrderbookResponse,
   QuoteStalenessConfig,
   QuoteType,
   RouteResponse,
@@ -302,6 +304,29 @@ export class StellarRouteClient {
       this.retries,
       'POST',
       requests,
+    );
+  }
+
+  /**
+   * `POST /api/v1/batch/orderbook` — fetch multiple orderbook snapshots in a
+   * single request. Per-item failures are reported in each result's `status`
+   * field and do not abort the batch.
+   *
+   * @param requests Array of base/quote pairs to fetch (1–25).
+   *
+   * @throws {@link StellarRouteApiError} when the batch request itself fails.
+   */
+  async getOrderbooksBatch(
+    requests: OrderbookRequestItem[],
+    signal?: AbortSignal,
+  ): Promise<BatchOrderbookResponse> {
+    const path = '/api/v1/batch/orderbook';
+    return this.request<BatchOrderbookResponse>(
+      path,
+      signal,
+      this.retries,
+      'POST',
+      { requests },
     );
   }
 

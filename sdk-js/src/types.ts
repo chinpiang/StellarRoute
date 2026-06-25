@@ -158,6 +158,54 @@ export interface BatchQuoteResponse {
 }
 
 /**
+ * A single request item for a batch orderbook lookup.
+ */
+export interface OrderbookRequestItem {
+  /** Base asset identifier: "native", "CODE", or "CODE:ISSUER". */
+  base: string;
+  /** Quote asset identifier. */
+  quote: string;
+}
+
+/**
+ * Per-item error returned inside a batch response.
+ */
+export interface BatchItemError {
+  /** Machine-readable error code. */
+  code: string;
+  /** Human-readable description. */
+  message: string;
+}
+
+/**
+ * Result for a single item in a batch orderbook response.
+ */
+export interface BatchOrderbookItemResult {
+  /** Zero-based index of this item in the original request. */
+  index: number;
+  /** The orderbook, present when `status === "ok"`. */
+  orderbook?: Orderbook;
+  /** Per-item error, present when `status === "error"`. */
+  error?: BatchItemError;
+  /** `"ok"` or `"error"`. */
+  status: string;
+}
+
+/**
+ * Response from a batch orderbook request.
+ */
+export interface BatchOrderbookResponse {
+  /** Results in the same order as the request items. */
+  results: BatchOrderbookItemResult[];
+  /** Number of items that succeeded. */
+  items_succeeded: number;
+  /** Number of items that failed (per-item errors, not a batch-level failure). */
+  items_failed: number;
+  /** Total items in the batch. */
+  total: number;
+}
+
+/**
  * Configuration for quote staleness detection
  */
 export interface QuoteStalenessConfig {
