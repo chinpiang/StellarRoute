@@ -327,6 +327,60 @@ export function WalletProvider({
   );
 }
 
+const STORY_WALLET_ADDRESS =
+  'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+const noopAsync = async () => {};
+
+interface StoryWalletProviderProps {
+  children: ReactNode;
+  connected?: boolean;
+  address?: string;
+}
+
+/** Deterministic wallet context for Ladle stories and visual fixtures. */
+export function StoryWalletProvider({
+  children,
+  connected = false,
+  address = STORY_WALLET_ADDRESS,
+}: StoryWalletProviderProps) {
+  const value: WalletContextValue = {
+    address: connected ? address : null,
+    isConnected: connected,
+    network: 'testnet',
+    walletNetwork: connected ? 'testnet' : null,
+    walletId: connected ? 'freighter' : null,
+    availableWallets: [],
+    isLoading: false,
+    error: null,
+    connect: noopAsync,
+    reconnect: noopAsync,
+    disconnect: () => {},
+    setNetwork: () => {},
+    autoReconnectPreferred: false,
+    setAutoReconnectPreferred: () => {},
+    refreshWallets: noopAsync,
+    refreshAccount: noopAsync,
+    networkMismatch: false,
+    accountSwitchState: {
+      isDetecting: false,
+      hasChanged: false,
+      previousAddress: null,
+    },
+    isTransactionPending: false,
+    setTransactionPending: () => {},
+    capabilities: null,
+    refreshCapabilities: noopAsync,
+    syncMismatch: false,
+    resyncWallet: noopAsync,
+    dismissSyncMismatch: () => {},
+  };
+
+  return (
+    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+  );
+}
+
 export function useWallet() {
   const context = useContext(WalletContext);
   if (!context) {

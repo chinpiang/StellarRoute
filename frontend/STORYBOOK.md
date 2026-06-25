@@ -3,6 +3,7 @@
 This repository uses Ladle to render component stories for core swap primitives.
 
 ## Available stories
+- `SwapCard` state matrix (`components/swap/SwapCard.stories.tsx`) — idle, quoting, stale, confirming, and error fixtures
 - `Swap primitives` (Core components in `components/swap/`)
 - `TokenSelector` (Shared component)
 - `QuoteCard` (Shared component)

@@ -6,6 +6,9 @@ import type { TradeParams } from '@/hooks/useTransactionLifecycle';
 
 // ── Shared mock quote ────────────────────────────────────────────────────────
 
+const MOCK_WALLET =
+  'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
 const baseTradeParams: TradeParams = {
   fromAsset: 'XLM',
   toAsset: 'USDC',
@@ -16,7 +19,7 @@ const baseTradeParams: TradeParams = {
   minReceived: '52.21 USDC',
   networkFee: '0.00001 XLM',
   routePath: [],
-  walletAddress: 'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  walletAddress: MOCK_WALLET,
 };
 
 const splitRouteTradeParams: TradeParams = {
@@ -29,7 +32,7 @@ const splitRouteTradeParams: TradeParams = {
   minReceived: '0.01645 BTC',
   networkFee: '0.00001 XLM',
   routePath: [],
-  walletAddress: 'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  walletAddress: MOCK_WALLET,
 };
 
 const highSlippageTradeParams: TradeParams = {
@@ -42,7 +45,7 @@ const highSlippageTradeParams: TradeParams = {
   minReceived: '1662500.00 AQUA',
   networkFee: '0.00001 XLM',
   routePath: [],
-  walletAddress: 'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  walletAddress: MOCK_WALLET,
 };
 
 // ── Shared no-op handlers ────────────────────────────────────────────────────
