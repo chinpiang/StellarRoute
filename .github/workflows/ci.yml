@@ -38,6 +38,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci --prefix frontend
+      - name: Lint frontend
+        run: npm --prefix frontend run lint
       - name: Build frontend
         run: npm --prefix frontend run build
       - name: Performance budget check
