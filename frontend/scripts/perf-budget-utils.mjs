@@ -281,6 +281,153 @@ export function computeBundleSize(chunkSizesKb) {
 import zlib from "zlib";
 import path from "path";
 
+function gzipChunkSize(buildDir, chunkPath) {
+  const relativePath = chunkPath.startsWith("_next/")
+    ? chunkPath.slice("_next/".length)
+    : chunkPath.startsWith("/_next/")
+      ? chunkPath.slice("/_next/".length)
+      : chunkPath;
+  const filePath = path.join(buildDir, relativePath);
+
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const content = fs.readFileSync(filePath);
+  return zlib.gzipSync(content).length;
+}
+
+function extractEntryJsFiles(manifestContent, projectPath) {
+  const entryStart = manifestContent.indexOf('"entryJSFiles":');
+  if (entryStart === -1) {
+    return [];
+  }
+
+  const entrySection = manifestContent.slice(entryStart);
+  const escapedPath = projectPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`"\\[project\\]${escapedPath}":\\[([^\\]]+)\\]`);
+  const match = entrySection.match(pattern);
+  if (!match) {
+    return [];
+  }
+
+  const files = [];
+  const fileRegex = /"([^"]+\.js)"/g;
+  let fileMatch;
+  while ((fileMatch = fileRegex.exec(match[1])) !== null) {
+    files.push(fileMatch[1]);
+  }
+
+  return files;
+}
+
+function collectAppRouterSwapChunks(buildDir) {
+  const swapManifestPath = path.join(
+    buildDir,
+    "server/app/swap/page_client-reference-manifest.js",
+  );
+
+  if (!fs.existsSync(swapManifestPath)) {
+    return null;
+  }
+
+  const manifestContent = fs.readFileSync(swapManifestPath, "utf8");
+  const swapChunks = extractEntryJsFiles(manifestContent, "/app/swap/page");
+
+  if (!swapChunks.length) {
+    return null;
+  }
+
+  return new Set(swapChunks);
+}
+
+function summarizeChunks(buildDir, swapChunks) {
+  let totalBytes = 0;
+  const asyncChunks = [];
+
+  for (const chunk of swapChunks) {
+    if (!chunk.endsWith(".js")) continue;
+
+    const gzipBytes = gzipChunkSize(buildDir, chunk);
+    if (gzipBytes === null) {
+      continue;
+    }
+
+    totalBytes += gzipBytes;
+
+    const relativePath = chunk.startsWith("_next/")
+      ? chunk.slice("_next/".length)
+      : chunk.startsWith("/_next/")
+        ? chunk.slice("/_next/".length)
+        : chunk;
+    const isAsync =
+      relativePath.includes("chunks/") &&
+      !relativePath.includes("framework") &&
+      !relativePath.includes("main");
+
+    if (isAsync) {
+      asyncChunks.push({
+        name: relativePath,
+        sizeKb: gzipBytes / 1024,
+      });
+    }
+  }
+
+  return {
+    totalKb: totalBytes / 1024,
+    asyncChunks: asyncChunks.sort((a, b) => b.sizeKb - a.sizeKb),
+  };
+}
+
+/**
+ * Collect client chunk paths for the /swap route from Next.js build manifests.
+ *
+ * Supports both Pages Router (`build-manifest.json` pages["/swap"]) and
+ * App Router (`app-build-manifest.json` pages["/swap/page"]).
+ */
+function collectSwapChunkPaths(buildDir, buildManifest, appBuildManifest) {
+  const swapChunks = new Set();
+  const pages = buildManifest?.pages ?? {};
+  const appPages = appBuildManifest?.pages ?? {};
+
+  for (const chunk of pages["/swap"] ?? []) {
+    swapChunks.add(chunk);
+  }
+  for (const chunk of pages["/_app"] ?? []) {
+    swapChunks.add(chunk);
+  }
+  for (const chunk of buildManifest?.rootMainFiles ?? []) {
+    swapChunks.add(chunk);
+  }
+  for (const chunk of buildManifest?.polyfillFiles ?? []) {
+    swapChunks.add(chunk);
+  }
+
+  const swapPageKeys = Object.keys(appPages).filter(
+    (key) =>
+      key === "/swap/page" ||
+      key.endsWith("/swap/page") ||
+      key === "/swap",
+  );
+  for (const key of swapPageKeys) {
+    for (const chunk of appPages[key] ?? []) {
+      swapChunks.add(chunk);
+    }
+  }
+
+  // Root app layout chunks are shared by /swap and should count toward first load.
+  const layoutKeys = Object.keys(appPages).filter(
+    (key) => key === "/layout" || key.endsWith("/layout"),
+  );
+  for (const key of layoutKeys) {
+    for (const chunk of appPages[key] ?? []) {
+      swapChunks.add(chunk);
+    }
+  }
+
+  return swapChunks;
+}
+
 /**
  * Reads .next/build-manifest.json and computes the total gzip-compressed size
  * of all JavaScript chunks attributed to the /swap route (including shared
@@ -295,6 +442,9 @@ import path from "path";
  * @returns {{ totalKb: number, asyncChunks: Array<{ name: string, sizeKb: number }> }}
  */
 export function parseBundleSize(buildDir) {
+  const manifestPath = path.join(buildDir, "build-manifest.json");
+  const appManifestPath = path.join(buildDir, "app-build-manifest.json");
+
   if (!fs.existsSync(buildDir)) {
     console.error(
       `[perf-budget] ERROR: Build directory not found at "${buildDir}". Run \`npm run build\` first.`
@@ -302,116 +452,60 @@ export function parseBundleSize(buildDir) {
     process.exit(1);
   }
 
-  const clientManifestPath = path.join(buildDir, "server/app/swap/page_client-reference-manifest.js");
-  const manifestPath = path.join(buildDir, "build-manifest.json");
-  const swapChunks = new Set();
+  if (!fs.existsSync(manifestPath)) {
+    console.error(
+      `[perf-budget] ERROR: build-manifest.json not found at "${manifestPath}". Run \`npm run build\` first.`
+    );
+    process.exit(1);
+  }
 
-  if (fs.existsSync(clientManifestPath)) {
-    // Next.js App Router client manifest parsing
-    const content = fs.readFileSync(clientManifestPath, "utf8");
-    const lines = content.split("\n");
-    const targetLine = lines.find(line => line.startsWith('globalThis.__RSC_MANIFEST["/swap/page"]'));
-    if (!targetLine) {
-      console.error(
-        `[perf-budget] ERROR: Could not find swap page manifest line in "${clientManifestPath}"`
-      );
-      process.exit(1);
-    }
-    const startIndex = targetLine.indexOf("{");
-    const endIndex = targetLine.lastIndexOf("}");
-    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-      console.error(
-        `[perf-budget] ERROR: Invalid manifest line format in "${clientManifestPath}"`
-      );
-      process.exit(1);
-    }
-    const jsonStr = targetLine.slice(startIndex, endIndex + 1);
-    
+  let buildManifest;
+  try {
+    buildManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch (e) {
+    console.error(
+      `[perf-budget] ERROR: Failed to parse build-manifest.json: ${e.message}`
+    );
+    process.exit(1);
+  }
+
+  let appBuildManifest = null;
+  if (fs.existsSync(appManifestPath)) {
     try {
-      const manifestObj = JSON.parse(jsonStr);
-      const entryJSFiles = manifestObj.entryJSFiles ?? {};
-      const swapPageChunks = entryJSFiles["[project]/app/swap/page"] ?? [];
-      const appLayoutChunks = entryJSFiles["[project]/app/layout"] ?? [];
-      
-      for (const chunk of [...swapPageChunks, ...appLayoutChunks]) {
-        swapChunks.add(chunk);
-      }
+      appBuildManifest = JSON.parse(fs.readFileSync(appManifestPath, "utf8"));
     } catch (e) {
       console.error(
-        `[perf-budget] ERROR: Failed to parse RSC manifest: ${e.message}`
+        `[perf-budget] ERROR: Failed to parse app-build-manifest.json: ${e.message}`
       );
       process.exit(1);
-    }
-  } else {
-    // Pages Router (fallback)
-    if (!fs.existsSync(manifestPath)) {
-      console.error(
-        `[perf-budget] ERROR: build-manifest.json not found at "${manifestPath}". Run \`npm run build\` first.`
-      );
-      process.exit(1);
-    }
-
-    let manifest;
-    try {
-      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    } catch (e) {
-      console.error(
-        `[perf-budget] ERROR: Failed to parse build-manifest.json: ${e.message}`
-      );
-      process.exit(1);
-    }
-
-    const pages = manifest.pages ?? {};
-
-    if (!pages["/swap"]) {
-      const available = Object.keys(pages).join(", ");
-      console.error(
-        `[perf-budget] ERROR: Route "/swap" not found in build manifest. Available routes: ${available}`
-      );
-      process.exit(1);
-    }
-
-    for (const chunk of [...(pages["/swap"] ?? []), ...(pages["/_app"] ?? [])]) {
-      swapChunks.add(chunk);
     }
   }
 
-  let totalBytes = 0;
-  const asyncChunks = [];
-  
-  for (const chunk of swapChunks) {
-    if (!chunk.endsWith(".js")) continue;
-    
-    let relativePath = chunk;
-    if (relativePath.startsWith("/")) {
-      relativePath = relativePath.slice(1);
-    }
-    if (relativePath.startsWith("_next/")) {
-      relativePath = relativePath.slice("_next/".length);
-    }
-    const filePath = path.join(buildDir, relativePath);
+  let swapChunks = collectSwapChunkPaths(
+    buildDir,
+    buildManifest,
+    appBuildManifest,
+  );
 
-    if (!fs.existsSync(filePath)) {
-      continue;
-    }
-
-    const content = fs.readFileSync(filePath);
-    const gzipBytes = zlib.gzipSync(content).length;
-    totalBytes += gzipBytes;
-    
-    const isAsync = relativePath.includes("chunks/") && !relativePath.includes("framework") && !relativePath.includes("main");
-    if (isAsync) {
-      asyncChunks.push({
-        name: relativePath,
-        sizeKb: gzipBytes / 1024,
-      });
+  if (swapChunks.size === 0) {
+    const appRouterChunks = collectAppRouterSwapChunks(buildDir);
+    if (appRouterChunks?.size) {
+      swapChunks = appRouterChunks;
     }
   }
 
-  return {
-    totalKb: totalBytes / 1024,
-    asyncChunks: asyncChunks.sort((a, b) => b.sizeKb - a.sizeKb),
-  };
+  if (swapChunks.size === 0) {
+    const available = [
+      ...Object.keys(buildManifest.pages ?? {}),
+      ...Object.keys(appBuildManifest?.pages ?? {}).map((key) => `[app] ${key}`),
+    ].join(", ");
+    console.error(
+      `[perf-budget] ERROR: Route "/swap" not found in build manifest. Available routes: ${available}`
+    );
+    process.exit(1);
+  }
+
+  return summarizeChunks(buildDir, swapChunks);
 }
 
 // ---------------------------------------------------------------------------

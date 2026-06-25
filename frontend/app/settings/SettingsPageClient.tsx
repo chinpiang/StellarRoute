@@ -16,7 +16,7 @@ import { BrowserNotificationSettings } from '@/components/settings/BrowserNotifi
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 import { useSwapI18n } from '@/lib/swap-i18n';
 
-export default function SettingsPageClient() {
+export function SettingsPageClient() {
   const { settings, updateSlippage, updateTheme, resetSettings } = useSettings();
   const [localSlippage, setLocalSlippage] = useState(settings.slippageTolerance.toString());
   const {

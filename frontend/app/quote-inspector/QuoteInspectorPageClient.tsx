@@ -64,7 +64,8 @@ const mockQuotes: VenueQuote[] = [
   }
 ];
 
-export default function QuoteInspectorPageClient() {
+export function QuoteInspectorPageClient() {
+
   const handleSelect = (quote: VenueQuote) => {
     toast.success(`Quote reconciled via ${quote.venueName}`, {
       description: `Final output: ${quote.total} USDC`,

@@ -120,7 +120,7 @@ function VirtualizedOrderSide({
   );
 }
 
-export default function OrderbookPageClient() {
+export function OrderbookPageClient() {
   const { data: pairs, loading: pairsLoading, error: pairsError } = usePairs();
   const [selectedPairKey, setSelectedPairKey] = useState<string>("");
   const tradingPairContext = useOptionalTradingPair();

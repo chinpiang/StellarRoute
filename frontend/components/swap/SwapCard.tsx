@@ -36,12 +36,13 @@ import { useWallet } from '@/components/providers/wallet-provider';
 import { signTransactionWithWallet } from '@/lib/wallet';
 import { submitToHorizon, getNetworkPassphrase, getHorizonUrl } from '@/lib/wallet/submit';
 import { buildPathPaymentXdr } from '@/lib/wallet/xdr-builder';
-import { getFeatureFlag } from '@/lib/feature-flags';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
 import { useRoutes } from '@/hooks/useApi';
-import { emitRouteEvent, getPriceImpactTier } from '@/lib/telemetry';
+import { emitRouteEvent } from '@/lib/telemetry';
+import { SwapWarningCenter, type SwapWarning } from './SwapWarningCenter';
 import { quoteExportToCsv, type QuoteExportPayload } from '@/lib/quote-export';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import {
@@ -67,6 +68,7 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
   const tradingPairContext = useOptionalTradingPair();
+  const { enabled: realXdrEnabled } = useFeatureFlag('real_xdr');
 
   // Wrap useSearchParams in try-catch for SSR
   let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null =
@@ -93,6 +95,8 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
     fromAmount,
     setFromAmount,
     toAmount,
+    side,
+    setSide,
     slippage,
     setSlippage,
     deadline,
@@ -197,29 +201,9 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
     // Trigger re-quote
     quote.refresh();
     
-    const fromSymbol = fromToken === 'native' ? 'XLM' : fromToken.split(':')[0];
-    const toSymbol = toToken === 'native' ? 'XLM' : toToken.split(':')[0];
-    
-    // Emit route_select telemetry event
-    const hasDex = route.rawPath
-      ? route.rawPath.some((hop: any) => hop.source === 'sdex')
-      : route.venue.toLowerCase().includes('sdex');
-      
-    const hasAmm = route.rawPath
-      ? route.rawPath.some((hop: any) => hop.source.startsWith('amm:'))
-      : route.venue.toLowerCase().includes('amm') || route.venue.toLowerCase().includes('pool');
-      
-    const priceImpactVal = route.priceImpact ?? quote.priceImpact;
-    
-    emitRouteEvent('route_select', {
-      fromAssetCode: fromSymbol,
-      toAssetCode: toSymbol,
-      routeLength: route.rawPath ? route.rawPath.length : (quote.data?.path.length ?? 1),
-      priceImpactTier: getPriceImpactTier(priceImpactVal),
-      hasDex,
-      hasAmm,
-    });
-  }, [fromToken, toToken, quote]);
+    const hopCount = route.rawPath ? route.rawPath.length : (quote.data?.path.length ?? 1);
+    emitRouteEvent(route.venue, hopCount);
+  }, [quote]);
 
   const isRoutesLoading = quote.loading || routesState.loading;
 
@@ -321,7 +305,96 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
       ? 'refresh'
       : null;
   const requiresFreshQuote =
-    recoveryRequestedAt !== null && (quote.loading || quote.isStale);
+    recoveryRequestedAt !== null &&
+    (quote.lastQuotedAtMs === null ||
+      quote.lastQuotedAtMs < recoveryRequestedAt ||
+      quote.loading ||
+      quote.isStale);
+
+  // --- Issue #745: Swap Warning Center Logic ---
+  const [warnings, setWarnings] = useState<SwapWarning[]>([]);
+  const [dismissedWarningIds, setDismissedWarningIds] = useState<Set<string>>(new Set());
+
+  const handleRemoveWarning = useCallback((id: string) => {
+    setDismissedWarningIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const checkWarnings = () => {
+      const list: SwapWarning[] = [];
+
+      // 1. Low slippage (<0.5%) warn (warning level, dismissible)
+      if (slippage > 0 && slippage < 0.5) {
+        const id = 'low_slippage';
+        if (!dismissedWarningIds.has(id)) {
+          list.push({
+            id,
+            type: 'warning',
+            title: 'Low Slippage Tolerance',
+            message: `Your transaction may fail if the price moves unfavorably by more than the set limit of ${slippage}%.`,
+            timestamp: Date.now(),
+            dismissible: true,
+          });
+        }
+      }
+
+      // 2. High slippage (>5.0%) warn (error level, not dismissible)
+      if (slippage > 5.0) {
+        const id = 'high_slippage';
+        list.push({
+          id,
+          type: 'error',
+          title: 'High Slippage Risk',
+          message: 'High slippage increases the risk of frontrunning and getting a significantly worse price.',
+          timestamp: Date.now(),
+          dismissible: false,
+        });
+      }
+
+      // 3. Stale quote warning when timestamp exceeds 60s
+      if (quote.lastQuotedAtMs && Date.now() - quote.lastQuotedAtMs > 60000) {
+        const id = 'stale_quote';
+        list.push({
+          id,
+          type: 'warning',
+          title: 'Stale Quote',
+          message: 'This quote is more than 60 seconds old. Please refresh for accurate pricing.',
+          timestamp: Date.now(),
+          dismissible: false,
+        });
+      }
+
+      // 4. Quote error response from API
+      if (quote.error) {
+        const id = `quote_error_${quote.error.message}`;
+        if (!dismissedWarningIds.has(id)) {
+          list.push({
+            id,
+            type: 'error',
+            title: 'Failed to Get Quote',
+            message: quote.error.message || 'An unexpected error occurred while fetching the price quote.',
+            timestamp: Date.now(),
+            dismissible: true,
+          });
+        }
+      }
+
+      setWarnings((prev) => {
+        const prevIds = prev.map((w) => w.id).join(',');
+        const currIds = list.map((w) => w.id).join(',');
+        if (prevIds === currIds) return prev;
+        return list;
+      });
+    };
+
+    checkWarnings();
+    const interval = setInterval(checkWarnings, 1000);
+    return () => clearInterval(interval);
+  }, [slippage, quote.lastQuotedAtMs, quote.error, dismissedWarningIds]);
 
   // Connection status indicator
   const { isOnline } = useOnlineStatus();
@@ -344,7 +417,7 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
       submitToHorizon(signedXdr, walletAppNetwork),
     // Build real Stellar path-payment XDR when the integration flag is enabled.
     // Falls back to "mock_xdr" stub when flag is off (default during development).
-    buildXdr: getFeatureFlag('realXdr') && walletAddress
+    buildXdr: realXdrEnabled && walletAddress
       ? (params) =>
           buildPathPaymentXdr({
             walletAddress: params.walletAddress || walletAddress,
@@ -784,7 +857,16 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
                   <Minimize2 className="h-4.5 w-4.5 text-muted-foreground" />
                 )}
               </Button>
-              <SettingsPanel />
+              <SettingsPanel
+                expertSettings={{
+                  expertMode,
+                  bypassConfirmation,
+                  extendedRouteDetails,
+                  updateExpertMode,
+                  updateBypassConfirmation,
+                  updateExtendedRouteDetails,
+                }}
+              />
               <Button
                 variant="ghost"
                 size="icon"
@@ -1021,6 +1103,21 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Warnings Panel */}
+          <SwapWarningCenter
+            warnings={warnings}
+            onRemoveWarning={handleRemoveWarning}
+            className="mb-2"
+          />
+
+          {/* Assistive Screen Reader Region */}
+          <div className="sr-only" aria-live="assertive" role="status">
+            {warnings
+              .filter((w) => w.type === 'error')
+              .map((w) => `${w.title}: ${w.message}`)
+              .join('. ')}
           </div>
 
           {/* Action Button */}
