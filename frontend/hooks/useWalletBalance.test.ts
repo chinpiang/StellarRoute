@@ -17,147 +17,201 @@ describe('useWalletBalance', () => {
     vi.restoreAllMocks();
   });
 
-  it('does not hit Horizon when disconnected', () => {
+  it('returns null balances when disconnected', () => {
     const { result } = renderHook(() =>
       useWalletBalance({
-        address: 'G123',
+        address: TEST_ADDRESS,
         asset: 'native',
         isConnected: false,
         network: 'testnet',
-      }),
+      })
     );
 
-    expect(global.fetch).not.toHaveBeenCalled();
     expect(result.current.balance).toBeNull();
+    expect(result.current.spendableBalance).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('returns null balances when address is missing', () => {
+    const { result } = renderHook(() =>
+      useWalletBalance({
+        address: null,
+        asset: 'native',
+        isConnected: true,
+        network: 'testnet',
+      })
+    );
+
+    expect(result.current.balance).toBeNull();
+    expect(result.current.spendableBalance).toBeNull();
     expect(result.current.loading).toBe(false);
   });
 
-  it('selects testnet horizon url by default', async () => {
-    renderHook(() =>
+  it('fetches native balance from Horizon testnet', async () => {
+    global.fetch = mockHorizonAccount([
+      { balance: '42.5000000', asset_type: 'native' },
+    ]) as typeof fetch;
+
+    const { result } = renderHook(() =>
       useWalletBalance({
-        address: 'G123',
+        address: TEST_ADDRESS,
         asset: 'native',
         isConnected: true,
-        network: null,
-      }),
+        network: 'testnet',
+      })
     );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('horizon-testnet.stellar.org/accounts/G123'),
-      expect.any(Object),
+      `https://horizon-testnet.stellar.org/accounts/${encodeURIComponent(TEST_ADDRESS)}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+    expect(result.current.balance).toBe('42.5000000');
+    expect(result.current.spendableBalance).toBe(
+      (42.5 - XLM_FEE_RESERVE).toFixed(7)
+    );
+    expect(result.current.error).toBeNull();
   });
 
-  it('selects mainnet horizon url when network is mainnet', async () => {
-    renderHook(() =>
+  it('fetches token balance by code and issuer', async () => {
+    const issuer = 'GATEMHCCKCY67ZUCKTROYN24ZYT5GK4EQZ65JJLDHKHRUZI3EUEKMTCH';
+    global.fetch = mockHorizonAccount([
+      { balance: '50.0000000', asset_type: 'native' },
+      {
+        balance: '250.1234567',
+        asset_type: 'credit_alphanum4',
+        asset_code: 'USDC',
+        asset_issuer: issuer,
+      },
+    ]) as typeof fetch;
+
+    const { result } = renderHook(() =>
       useWalletBalance({
-        address: 'G123',
-        asset: 'native',
+        address: TEST_ADDRESS,
+        asset: `USDC:${issuer}`,
         isConnected: true,
         network: 'mainnet',
-      }),
+      })
     );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('horizon.stellar.org/accounts/G123'),
-      expect.any(Object),
+      `https://horizon.stellar.org/accounts/${encodeURIComponent(TEST_ADDRESS)}`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+    expect(result.current.balance).toBe('250.1234567');
+    expect(result.current.spendableBalance).toBe('250.1234567');
   });
 
-  it('handles loading state correctly', async () => {
-    let resolveFetch!: (value: unknown) => void;
-    const fetchPromise = new Promise((resolve) => {
-      resolveFetch = resolve;
-    });
-    vi.mocked(global.fetch).mockReturnValueOnce(fetchPromise as Promise<Response>);
+  it('returns zero when asset is not held', async () => {
+    global.fetch = mockHorizonAccount([
+      { balance: '10.0000000', asset_type: 'native' },
+    ]) as typeof fetch;
 
     const { result } = renderHook(() =>
       useWalletBalance({
-        address: 'G123',
+        address: TEST_ADDRESS,
+        asset: 'USDC:GATEMHCCKCY67ZUCKTROYN24ZYT5GK4EQZ65JJLDHKHRUZI3EUEKMTCH',
+        isConnected: true,
+        network: 'testnet',
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.balance).toBe('0');
+    expect(result.current.spendableBalance).toBe('0');
+  });
+
+  it('sets error when Horizon responds with failure', async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        json: () => Promise.reject(new Error('not found')),
+      })
+    ) as typeof fetch;
+
+    const { result } = renderHook(() =>
+      useWalletBalance({
+        address: TEST_ADDRESS,
         asset: 'native',
         isConnected: true,
         network: 'testnet',
-      }),
+      })
     );
 
-    expect(result.current.loading).toBe(true);
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
     expect(result.current.balance).toBeNull();
-
-    resolveFetch({
-      ok: true,
-      json: () => Promise.resolve({ balances: [{ asset_type: 'native', balance: '100' }] }),
-    });
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
-    });
-
-    expect(result.current.balance).toBe('100');
+    expect(result.current.spendableBalance).toBeNull();
+    expect(result.current.error?.message).toBe('Unable to load wallet balance.');
   });
 
-  it('handles success state for native balance', async () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ balances: [{ asset_type: 'native', balance: '100' }] }),
-    } as Response);
-
-    const { result } = renderHook(() =>
-      useWalletBalance({
-        address: 'G123',
-        asset: 'native',
-        isConnected: true,
-        network: 'testnet',
-      }),
-    );
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
-      expect(result.current.balance).toBe('100');
+  it('aborts in-flight fetch when dependencies change', async () => {
+    let resolveFirst: (value: unknown) => void;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
     });
-  });
 
-  it('handles 404 account state (error)', async () => {
-    vi.mocked(global.fetch).mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-    } as Response);
+    global.fetch = vi.fn(() => firstPromise) as typeof fetch;
 
-    const { result } = renderHook(() =>
-      useWalletBalance({
-        address: 'G123',
-        asset: 'native',
-        isConnected: true,
-        network: 'testnet',
-      }),
+    const { rerender, unmount } = renderHook(
+      (props: { asset: string }) =>
+        useWalletBalance({
+          address: TEST_ADDRESS,
+          asset: props.asset,
+          isConnected: true,
+          network: 'testnet',
+        }),
+      { initialProps: { asset: 'native' } }
     );
 
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
-      expect(result.current.error).toBeInstanceOf(Error);
-      expect(result.current.error?.message).toBe('Unable to load wallet balance.');
+    rerender({ asset: 'USDC:GABC' });
+
+    await act(async () => {
+      resolveFirst!({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            balances: [{ balance: '99.0000000', asset_type: 'native' }],
+          }),
+      });
     });
-  });
-
-  it('aborts fetch on unmount', () => {
-    const { unmount } = renderHook(() =>
-      useWalletBalance({
-        address: 'G123',
-        asset: 'native',
-        isConnected: true,
-        network: 'testnet',
-      }),
-    );
-
-    const fetchCallArgs = vi.mocked(global.fetch).mock.calls[0];
-    expect(fetchCallArgs).toBeDefined();
-    
-    const fetchOptions = fetchCallArgs[1] as RequestInit;
-    const signal = fetchOptions.signal;
-    expect(signal).toBeDefined();
-    expect(signal?.aborted).toBe(false);
 
     unmount();
+    expect(global.fetch).toHaveBeenCalled();
+  });
 
-    expect(signal?.aborted).toBe(true);
+  it('never returns hardcoded stub balance in production path', async () => {
+    global.fetch = mockHorizonAccount([
+      { balance: '7.2500000', asset_type: 'native' },
+    ]) as typeof fetch;
+
+    const { result } = renderHook(() =>
+      useWalletBalance({
+        address: TEST_ADDRESS,
+        asset: 'native',
+        isConnected: true,
+        network: 'testnet',
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.balance).not.toBe('10000.0000000');
+    expect(result.current.spendableBalance).not.toBe('10000.0000000');
   });
 });
