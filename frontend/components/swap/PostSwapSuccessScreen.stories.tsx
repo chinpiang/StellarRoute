@@ -23,7 +23,12 @@ export const WithTradeParams = () => (
         fromAsset: 'XLM',
         toAmount: '50',
         toAsset: 'USDC',
+        exchangeRate: '0.5',
+        priceImpact: '0.1%',
+        minReceived: '49.5',
         networkFee: '0.01 XLM',
+        routePath: [],
+        walletAddress: 'GABC123',
       }}
       onDone={() => alert('Done clicked')}
       onSwapAgain={() => alert('Swap Again clicked')}
