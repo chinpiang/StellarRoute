@@ -10,11 +10,16 @@
 //!
 //! Request logs and decision stages include matching `request_id` values.
 
-use axum::{extract::State, Json};
+use axum::{extract::State, response::IntoResponse, Json};
+use opentelemetry::trace::TraceContextExt;
+use serde_json::{Map, Value};
 use sqlx::Row;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, info_span, warn, Instrument};
+use tracing::{debug, info_span, warn, Instrument, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use uuid::Uuid;
 
 use stellarroute_routing::health::filter::GraphFilter;
 use stellarroute_routing::health::freshness::{FreshnessGuard, FreshnessOutcome};
@@ -33,10 +38,48 @@ use crate::{
         request::{AssetPath, QuoteParams},
         AssetInfo, ExcludedVenueInfo as ApiExcludedVenueInfo,
         ExclusionDiagnostics as ApiExclusionDiagnostics, ExclusionReason as ApiExclusionReason,
-        PathStep, PreparedQuoteResponse, QuoteRationaleMetadata, QuoteResponse, VenueEvaluation,
+        PathStep, PreparedQuoteResponse, QuoteExpirationWebhookPayload, QuoteRationaleMetadata,
+        QuoteResponse, VenueEvaluation,
     },
     state::AppState,
 };
+
+fn extract_consumer_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("x-api-key")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("api_key:{value}"))
+}
+
+fn build_quote_webhook_payload(
+    consumer_id: String,
+    base: &str,
+    quote: &str,
+    quote_resp: &QuoteResponse,
+) -> QuoteExpirationWebhookPayload {
+    let quote_id = format!(
+        "{}:{}:{}:{}",
+        base, quote, quote_resp.timestamp, quote_resp.amount
+    );
+
+    QuoteExpirationWebhookPayload {
+        event_id: Uuid::new_v4().to_string(),
+        consumer_id,
+        quote_id,
+        pair: format!("{base}/{quote}"),
+        reason: "ttl_expired".to_string(),
+        expired_at: quote_resp
+            .expires_at
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+        event: "quote.expired".to_string(),
+        timestamp: chrono::Utc::now().timestamp_millis(),
+        base_asset: base.to_string(),
+        quote_asset: quote.to_string(),
+        amount_in: quote_resp.amount.clone(),
+    }
+}
 
 /// Get price quote for a trading pair
 ///
@@ -51,6 +94,7 @@ use crate::{
         ("amount" = Option<String>, Query, description = "Amount to trade (default: 1)"),
         ("slippage_bps" = Option<u32>, Query, description = "Slippage tolerance in basis points (default: 50)"),
         ("quote_type" = Option<String>, Query, description = "Type of quote: 'sell' or 'buy' (default: sell)"),
+        ("fields" = Option<String>, Query, description = "Optional comma-separated top-level quote fields to include (e.g., 'price,total,path'). Unknown fields return 400."),
     ),
     responses(
         (status = 200, description = "Price quote", body = QuoteResponse),
@@ -103,7 +147,7 @@ pub async fn get_quote(
     headers: axum::http::HeaderMap,
     request_id: RequestId,
     request: crate::middleware::validation::ValidatedQuoteRequest,
-) -> Result<Json<crate::models::ApiResponse<QuoteResponse>>> {
+) -> Result<axum::response::Response> {
     let ValidatedQuoteRequest {
         base: base_asset,
         quote: quote_asset,
@@ -119,6 +163,7 @@ pub async fn get_quote(
         .map(|s| s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     let explain = explain_header || params.explain.unwrap_or(false);
+    let selected_fields = params.selected_fields();
 
     let start_time = std::time::Instant::now();
 
@@ -144,6 +189,8 @@ pub async fn get_quote(
         {
             Ok((prepared_quote_resp, cache_hit)) => {
                 let quote_resp = prepared_quote_resp.into_quote()?;
+            Ok((prepared_quote, cache_hit)) => {
+                let quote_resp = prepared_quote.into_quote()?;
                 let error_class = "none";
                 let latency_ms = start_time.elapsed().as_millis() as u64;
 
@@ -185,8 +232,17 @@ pub async fn get_quote(
                     audit_exclusions,
                 );
 
-                let envelope = crate::models::ApiResponse::new(quote_resp, request_id.to_string());
-                Ok(Json(envelope))
+                let data = if let Some(fields) = &selected_fields {
+                    build_sparse_quote_data(&quote_resp, fields)?
+                } else {
+                    serde_json::to_value(quote_resp)
+                        .map_err(|e| ApiError::Internal(Arc::new(anyhow::anyhow!(e))))?
+                };
+                let envelope = crate::models::ApiResponse::new(data, request_id.to_string());
+                crate::compression::json_response(
+                    &envelope,
+                    headers.get(axum::http::header::ACCEPT_ENCODING),
+                )
             }
             Err(e) => {
                 let (error_class, audit_outcome) = match &e {
@@ -422,6 +478,7 @@ pub async fn get_batch_quotes(
                         .quote_type
                         .unwrap_or(crate::models::request::QuoteType::Sell),
                     explain: None,
+                    fields: None,
                 };
 
                 let base_asset = match AssetPath::parse(&item.base) {
@@ -456,6 +513,15 @@ pub async fn get_batch_quotes(
                             let (code, message) = batch_error_from_api_error(&e);
                             BatchQuoteItemResult::err(i, BatchItemError { code, message })
                         }
+                    Ok((quote, _cache_hit)) => match quote.into_quote() {
+                        Ok(inner) => BatchQuoteItemResult::ok(i, inner),
+                        Err(e) => BatchQuoteItemResult::err(
+                            i,
+                            BatchItemError {
+                                code: "internal".to_string(),
+                                message: e.to_string(),
+                            },
+                        ),
                     },
                     Err(e) => {
                         let (code, message) = batch_error_from_api_error(&e);
@@ -641,7 +707,7 @@ pub(crate) async fn get_quote_inner(
     }
 }
 
-async fn compute_quote_response(
+pub(crate) async fn compute_quote_response(
     state: Arc<AppState>,
     base_asset: AssetPath,
     quote_asset: AssetPath,
@@ -670,6 +736,25 @@ async fn compute_quote_response(
 
     let base_id = find_asset_id(&state, &base_asset).await?;
     let quote_id = find_asset_id(&state, &quote_asset).await?;
+
+    // --- Indexer lag throttle ---
+    // Under sustained sync drift we reduce quote compute and return a degraded
+    // response instead of rejecting the request.
+    let is_critical = state.indexer_lag.is_any_source_critical().await;
+    let max_lag = if is_critical {
+        state.indexer_lag.max_lag_ledgers().await
+    } else {
+        0
+    };
+
+    let degrade_due_to_indexer_lag = is_critical;
+
+    if degrade_due_to_indexer_lag {
+        warn!(
+            max_lag_ledgers = max_lag,
+            "Indexer lag critical; returning degraded quote (reduced compute)"
+        );
+    }
 
     let (
         price,
@@ -745,6 +830,7 @@ async fn compute_quote_response(
             params.slippage_bps(),
             quote_type_str,
             liquidity_snapshot,
+            crate::replay::artifact::DecisionGraphSnapshot::default(),
             health_config,
             &response,
             None,
@@ -752,6 +838,15 @@ async fn compute_quote_response(
     }
 
     Ok(response)
+}
+
+pub(crate) async fn get_quote_for_pair_dry_run(
+    state: Arc<AppState>,
+    base_asset: AssetPath,
+    quote_asset: AssetPath,
+    params: QuoteParams,
+) -> Result<QuoteResponse> {
+    compute_quote_response(state, base_asset, quote_asset, params, false).await
 }
 
 /// Get routing path for a trading pair
@@ -805,7 +900,7 @@ pub async fn get_route(
     let quote_id = find_asset_id(&state, &quote_asset).await?;
 
     // For route endpoint, we reuse the same logic but return a simplified response
-    let (_, path, _, _, _, _, _) =
+    let (_, path, _, _, _, _, _, _, _) =
         find_best_price(&state, &base_asset, &quote_asset, base_id, quote_id, amount).await?;
 
     let response = crate::models::RouteResponse {
@@ -830,9 +925,37 @@ type FindBestPriceResult = (
     FreshnessOutcome,
     Vec<chrono::DateTime<chrono::Utc>>,
     Vec<crate::replay::artifact::LiquidityCandidate>, // snapshot for replay capture
-    Option<f64>, // midpoint
-    Option<u32>, // spread_bps
+    Option<f64>,                                      // midpoint
+    Option<u32>,                                      // spread_bps
 );
+
+#[derive(Debug, Clone)]
+struct SourceTraceContext {
+    trace_id: String,
+    span_id: String,
+}
+
+impl SourceTraceContext {
+    fn from_parts(trace_id: String, span_id: String) -> Option<Self> {
+        if trace_id.is_empty()
+            || span_id.is_empty()
+            || trace_id == "00000000000000000000000000000000"
+            || span_id == "0000000000000000"
+        {
+            return None;
+        }
+
+        Some(Self { trace_id, span_id })
+    }
+
+    fn to_otel_context(&self) -> Option<opentelemetry::Context> {
+        crate::tracing_config::TraceContext {
+            trace_id: self.trace_id.clone(),
+            span_id: self.span_id.clone(),
+        }
+        .to_otel_context()
+    }
+}
 
 #[tracing::instrument(
     name = "find_best_price",
@@ -901,7 +1024,7 @@ async fn find_best_price(
         .filter(|c| !c.is_inverse)
         .cloned()
         .collect();
-    
+
     let inverse_candidates: Vec<DirectVenueCandidate> = candidates
         .iter()
         .filter(|c| c.is_inverse)
@@ -924,7 +1047,7 @@ async fn find_best_price(
         .filter(|c| c.price > 0.0)
         .map(|c| c.price)
         .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     let best_bid = inverse_candidates
         .iter()
         .filter(|c| c.price > 0.0)
@@ -994,6 +1117,9 @@ async fn find_best_price(
         .iter()
         .filter_map(|&idx| direct_candidates.get(idx).cloned())
         .collect();
+
+    link_source_traces(&candidates);
+
     let fresh_scorer_inputs: Vec<&VenueScorerInput> = freshness_outcome
         .fresh
         .iter()
@@ -1165,6 +1291,16 @@ async fn find_best_price(
     ))
 }
 
+fn link_source_traces(candidates: &[DirectVenueCandidate]) {
+    for candidate in candidates {
+        if let Some(trace_context) = candidate.source_trace_context() {
+            if let Some(otel_context) = trace_context.to_otel_context() {
+                Span::current().add_link(otel_context.span().span_context().clone());
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct DirectVenueCandidate {
     venue_type: String,
@@ -1173,8 +1309,10 @@ struct DirectVenueCandidate {
     available_amount: f64,
     price_e7: i64,
     available_amount_e7: i64,
-    fee_bps: u32,
+    source_trace_id: String,
+    source_span_id: String,
     is_inverse: bool,
+    fee_bps: u32,
 }
 
 impl DirectVenueCandidate {
@@ -1188,6 +1326,10 @@ impl DirectVenueCandidate {
         } else {
             "sdex".to_string()
         }
+    }
+
+    fn source_trace_context(&self) -> Option<SourceTraceContext> {
+        SourceTraceContext::from_parts(self.source_trace_id.clone(), self.source_span_id.clone())
     }
 }
 
@@ -1255,6 +1397,27 @@ async fn maybe_invalidate_quote_cache(
                         "Liquidity revision changed for {}/{}; invalidated {} quote cache keys",
                         base, quote, deleted
                     );
+
+                    if deleted > 0 {
+                        let payload = QuoteExpirationWebhookPayload {
+                            event_id: Uuid::new_v4().to_string(),
+                            consumer_id: String::new(),
+                            quote_id: format!("invalidated:{base}:{quote}:{liquidity_revision}"),
+                            pair: format!("{base}/{quote}"),
+                            reason: "cache_invalidated".to_string(),
+                            expired_at: chrono::Utc::now().timestamp_millis(),
+                            event: "quote.expired".to_string(),
+                            timestamp: chrono::Utc::now().timestamp_millis(),
+                            base_asset: base.to_string(),
+                            quote_asset: quote.to_string(),
+                            amount_in: String::new(),
+                        };
+
+                        state
+                            .quote_expiration_webhooks
+                            .clone()
+                            .spawn_dispatch_to_all(payload);
+                    }
                 }
 
                 let _ = cache
@@ -1280,20 +1443,19 @@ async fn fetch_source_candidates(
 ) -> Result<Vec<DirectVenueCandidate>> {
     let rows = sqlx::query(
         r#"
-        select
-            nl.venue_type,
-            nl.venue_ref,
-            nl.price::text as price,
-            nl.available_amount::text as available_amount,
-            nl.price_e7,
-            nl.available_amount_e7,
-            nl.selling_asset_id,
-            coalesce(amm.fee_bps, 0)::integer as fee_bps
-        from normalized_liquidity nl
-        left join amm_pool_reserves amm on nl.venue_type = 'amm' and nl.venue_ref = amm.pool_address
-        where ((selling_asset_id = $1 and buying_asset_id = $2)
-           or (selling_asset_id = $2 and buying_asset_id = $1))
-          and nl.venue_type = $3
+                select
+                    venue_type,
+                    venue_ref,
+                    price::text as price,
+                    available_amount::text as available_amount,
+                    price_e7,
+                                        available_amount_e7,
+                                        coalesce(source_trace_id, '') as source_trace_id,
+                                        coalesce(source_span_id, '') as source_span_id
+                from normalized_liquidity
+        where selling_asset_id = $1
+          and buying_asset_id = $2
+          and venue_type = $3
         "#,
     )
     .bind(base_id)
@@ -1314,9 +1476,8 @@ async fn fetch_source_candidates(
                 .unwrap_or(0.0);
             let price_e7: i64 = row.get("price_e7");
             let available_amount_e7: i64 = row.get("available_amount_e7");
-            let fee_bps: i32 = row.get("fee_bps");
-            let selling_id: uuid::Uuid = row.get("selling_asset_id");
-            
+            let source_trace_id: String = row.get("source_trace_id");
+            let source_span_id: String = row.get("source_span_id");
             DirectVenueCandidate {
                 venue_type,
                 venue_ref,
@@ -1324,8 +1485,10 @@ async fn fetch_source_candidates(
                 available_amount,
                 price_e7,
                 available_amount_e7,
-                fee_bps: fee_bps as u32,
-                is_inverse: selling_id == quote_id,
+                source_trace_id,
+                source_span_id,
+                is_inverse: false,
+                fee_bps: 0,
             }
         })
         .collect())
@@ -1397,7 +1560,7 @@ async fn find_asset_id(state: &AppState, asset: &AssetPath) -> Result<uuid::Uuid
 }
 
 /// Convert AssetPath to AssetInfo
-fn asset_path_to_info(asset: &AssetPath) -> AssetInfo {
+pub(crate) fn asset_path_to_info(asset: &AssetPath) -> AssetInfo {
     if asset.asset_code == "native" {
         AssetInfo::native()
     } else {
@@ -1475,6 +1638,26 @@ fn build_audit_exclusions(quote: &QuoteResponse) -> Vec<AuditExclusion> {
         .unwrap_or_default()
 }
 
+fn build_sparse_quote_data(quote: &QuoteResponse, selected_fields: &[String]) -> Result<Value> {
+    let serialized = serde_json::to_value(quote)
+        .map_err(|e| ApiError::Internal(Arc::new(anyhow::anyhow!(e))))?;
+
+    let data_obj = serialized.as_object().ok_or_else(|| {
+        ApiError::Internal(Arc::new(anyhow::anyhow!(
+            "quote payload did not serialize to an object"
+        )))
+    })?;
+
+    let mut sparse = Map::new();
+    for field in selected_fields {
+        if let Some(value) = data_obj.get(field) {
+            sparse.insert(field.clone(), value.clone());
+        }
+    }
+
+    Ok(Value::Object(sparse))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1496,6 +1679,8 @@ mod tests {
             available_amount_e7: (available_amount * 1e7) as i64,
             fee_bps,
             is_inverse: false,
+            source_trace_id: "".to_string(),
+            source_span_id: "".to_string(),
         }
     }
 
@@ -1517,11 +1702,27 @@ mod tests {
     }
 
     #[test]
+    fn native_usdc_quote_prefers_lowest_executable_direct_price() {
+        let candidates = vec![
+            candidate("amm", "pool-native-usdc", 1.02, 100.0, 30),
+            candidate("sdex", "offer-native-usdc-b", 1.01, 80.0, 0),
+            candidate("sdex", "offer-native-usdc-a", 0.99, 60.0, 0),
+        ];
+
+        let (selected, rationale) =
+            evaluate_single_hop_direct_venues(candidates, 50.0).expect("must select a venue");
+
+        assert_eq!(selected.venue_type, "sdex");
+        assert_eq!(selected.venue_ref, "offer-native-usdc-a");
+        assert_eq!(rationale.selected_source, "sdex:offer-native-usdc-a");
+    }
+
+    #[test]
     fn tie_break_is_deterministic_by_venue_then_ref() {
         let candidates = vec![
-            candidate("sdex", "offer2", 1.0, 100.0),
-            candidate("amm", "pool1", 1.0, 100.0),
-            candidate("sdex", "offer1", 1.0, 100.0),
+            candidate("sdex", "offer2", 1.0, 100.0, 0),
+            candidate("amm", "pool1", 1.0, 100.0, 30),
+            candidate("sdex", "offer1", 1.0, 100.0, 0),
         ];
 
         let (selected, rationale) =
@@ -1764,6 +1965,80 @@ mod tests {
         assert_eq!(data_freshness.fresh_count, 1);
         assert_eq!(data_freshness.max_staleness_secs, 300);
     }
+
+    fn sample_quote_response() -> QuoteResponse {
+        QuoteResponse {
+            base_asset: AssetInfo::native(),
+            quote_asset: AssetInfo::credit("USDC".to_string(), Some("GISSUER".to_string())),
+            amount: "100.0000000".to_string(),
+            price: "1.0500000".to_string(),
+            total: "105.0000000".to_string(),
+            quote_type: "sell".to_string(),
+            degraded: false,
+            path: vec![],
+            timestamp: 1_700_000_000_000,
+            expires_at: Some(1_700_000_030_000),
+            source_timestamp: Some(1_700_000_000_000),
+            ttl_seconds: Some(30),
+            rationale: None,
+            price_impact: Some("0.10".to_string()),
+            exclusion_diagnostics: None,
+            data_freshness: None,
+            midpoint: Some("1.0450000".to_string()),
+            spread_bps: Some(15),
+        }
+    }
+
+    #[test]
+    fn sparse_fields_common_price_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "price".to_string(),
+            "total".to_string(),
+            "timestamp".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("price"));
+        assert!(obj.contains_key("total"));
+        assert!(obj.contains_key("timestamp"));
+    }
+
+    #[test]
+    fn sparse_fields_common_asset_combo() {
+        let quote = sample_quote_response();
+        let fields = vec![
+            "base_asset".to_string(),
+            "quote_asset".to_string(),
+            "path".to_string(),
+        ];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("base_asset"));
+        assert!(obj.contains_key("quote_asset"));
+        assert!(obj.contains_key("path"));
+    }
+
+    #[test]
+    fn sparse_fields_omits_unselected_values() {
+        let quote = sample_quote_response();
+        let fields = vec!["price".to_string()];
+
+        let sparse = build_sparse_quote_data(&quote, &fields).expect("sparse payload");
+        let obj = sparse.as_object().expect("object");
+
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("price"));
+        assert!(!obj.contains_key("total"));
+        assert!(!obj.contains_key("base_asset"));
+    }
+
     #[tokio::test]
     async fn test_parallel_execution_latency() {
         use std::time::{Duration, Instant};

@@ -16,6 +16,7 @@ import type {
   WalletError,
   WalletNetwork,
   AccountSwitchState,
+  Capabilities,
 } from '@/lib/wallet/types';
 
 interface WalletContextValue {
@@ -36,10 +37,11 @@ interface WalletContextValue {
   refreshWallets: () => Promise<void>;
   refreshAccount: () => Promise<void>;
   networkMismatch: boolean;
-  stubSpendableBalance: string | null;
   accountSwitchState: AccountSwitchState;
   isTransactionPending: boolean;
   setTransactionPending: (pending: boolean) => void;
+  capabilities: Capabilities | null;
+  refreshCapabilities: () => Promise<void>;
   syncMismatch: boolean;
   resyncWallet: () => Promise<void>;
   dismissSyncMismatch: () => void;
@@ -75,6 +77,8 @@ export function WalletProvider({
     previousAddress: null,
   });
   const [isTransactionPending, setIsTransactionPending] = React.useState(false);
+  const [capabilities, setCapabilities] = React.useState<Capabilities | null>(null);
+  const [syncMismatch, setSyncMismatch] = React.useState(false);
   const didAttemptInitialReconnect = React.useRef(false);
   const reconnectThrottleUntilMs = React.useRef(0);
 
@@ -271,8 +275,6 @@ export function WalletProvider({
     };
   }, [autoReconnectPreferred, isConnected, isLoading, reconnect]);
 
-  const [syncMismatch, setSyncMismatch] = React.useState(false);
-
   const addressRef = React.useRef(address);
   const walletIdRef = React.useRef(walletId);
 
@@ -330,6 +332,13 @@ export function WalletProvider({
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
+  }, []);
+
+  const networkMismatch = isConnected && walletNetwork !== null && walletNetwork !== network;
+
+  const refreshCapabilities = React.useCallback(async () => {
+    // mock implementation
+    setCapabilities({ checkedAt: Date.now(), statuses: [] });
   }, []);
 
   const resyncWallet = React.useCallback(async () => {
@@ -421,12 +430,13 @@ export function WalletProvider({
     refreshWallets,
     refreshAccount,
     networkMismatch,
-    stubSpendableBalance,
     accountSwitchState,
     isTransactionPending,
     setTransactionPending: React.useCallback((pending: boolean) => {
       setIsTransactionPending(pending);
     }, []),
+    capabilities,
+    refreshCapabilities,
     syncMismatch,
     resyncWallet,
     dismissSyncMismatch,
@@ -436,6 +446,60 @@ export function WalletProvider({
     <WalletContext.Provider value={value}>
       {children}
     </WalletContext.Provider>
+  );
+}
+
+const STORY_WALLET_ADDRESS =
+  'GABC123DEFGHIJKLMNOPQRSTUVWXYZ456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+const noopAsync = async () => {};
+
+interface StoryWalletProviderProps {
+  children: ReactNode;
+  connected?: boolean;
+  address?: string;
+}
+
+/** Deterministic wallet context for Ladle stories and visual fixtures. */
+export function StoryWalletProvider({
+  children,
+  connected = false,
+  address = STORY_WALLET_ADDRESS,
+}: StoryWalletProviderProps) {
+  const value: WalletContextValue = {
+    address: connected ? address : null,
+    isConnected: connected,
+    network: 'testnet',
+    walletNetwork: connected ? 'testnet' : null,
+    walletId: connected ? 'freighter' : null,
+    availableWallets: [],
+    isLoading: false,
+    error: null,
+    connect: noopAsync,
+    reconnect: noopAsync,
+    disconnect: () => {},
+    setNetwork: () => {},
+    autoReconnectPreferred: false,
+    setAutoReconnectPreferred: () => {},
+    refreshWallets: noopAsync,
+    refreshAccount: noopAsync,
+    networkMismatch: false,
+    accountSwitchState: {
+      isDetecting: false,
+      hasChanged: false,
+      previousAddress: null,
+    },
+    isTransactionPending: false,
+    setTransactionPending: () => {},
+    capabilities: null,
+    refreshCapabilities: noopAsync,
+    syncMismatch: false,
+    resyncWallet: noopAsync,
+    dismissSyncMismatch: () => {},
+  };
+
+  return (
+    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
   );
 }
 

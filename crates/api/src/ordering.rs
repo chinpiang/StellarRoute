@@ -111,6 +111,8 @@ fn compare_by_key(a: &RouteCandidate, b: &RouteCandidate, key: SortKey) -> Order
             let empty = String::new();
             let a_venue = a.path.first().map(|h| &h.source).unwrap_or(&empty);
             let b_venue = b.path.first().map(|h| &h.source).unwrap_or(&empty);
+            let a_venue = a.path.first().map(|h| h.source.as_str()).unwrap_or("");
+            let b_venue = b.path.first().map(|h| h.source.as_str()).unwrap_or("");
             a_venue.cmp(b_venue)
         }
         SortKey::PolicyUsed => a.policy_used.cmp(&b.policy_used),
@@ -145,6 +147,8 @@ pub fn tie_break(a: &RouteCandidate, b: &RouteCandidate) -> Ordering {
     let empty = String::new();
     let a_venue = a.path.first().map(|h| &h.source).unwrap_or(&empty);
     let b_venue = b.path.first().map(|h| &h.source).unwrap_or(&empty);
+    let a_venue = a.path.first().map(|h| h.source.as_str()).unwrap_or("");
+    let b_venue = b.path.first().map(|h| h.source.as_str()).unwrap_or("");
     a_venue.cmp(b_venue)
 }
 

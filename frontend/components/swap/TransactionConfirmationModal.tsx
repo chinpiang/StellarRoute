@@ -49,6 +49,7 @@ export interface TransactionConfirmationModalProps {
     totalFee: string;
     netOutput: string;
   };
+  onSwapAgain?: () => void;
 }
 
 const STATUS_CONFIG = {
@@ -130,6 +131,7 @@ export function TransactionConfirmationModal({
   onDone,
   updatedBalances,
   feeData,
+  onSwapAgain,
 }: TransactionConfirmationModalProps) {
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -247,6 +249,9 @@ export function TransactionConfirmationModal({
                     ]
                   : undefined
               }
+              tradeParams={tradeParams}
+              onDone={onDone}
+              onSwapAgain={onSwapAgain}
             />
           )}
         </div>

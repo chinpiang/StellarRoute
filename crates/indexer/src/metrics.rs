@@ -42,13 +42,45 @@ lazy_static! {
     )
     .expect("Can't create INDEXER_LAG_LEDGERS gauge");
 
-    /// Offers indexed per poll cycle.
+    /// Total number of offers indexed from Horizon.
     pub static ref OFFERS_INDEXED: IntCounterVec = register_int_counter_vec!(
         "stellarroute_indexer_offers_indexed_total",
         "Total number of offers indexed from Horizon",
         &["source"]
     )
     .expect("Can't create OFFERS_INDEXED counter");
+
+    /// Total number of SSE stream disconnects.
+    pub static ref SSE_DISCONNECTS: IntCounterVec = register_int_counter_vec!(
+        "stellarroute_indexer_sse_disconnects_total",
+        "Total number of SSE stream disconnects",
+        &["source"]
+    )
+    .expect("Can't create SSE_DISCONNECTS counter");
+
+    /// Total number of SSE events received.
+    pub static ref SSE_EVENTS_RECEIVED: IntCounterVec = register_int_counter_vec!(
+        "stellarroute_indexer_sse_events_received_total",
+        "Total number of SSE events received",
+        &["source"]
+    )
+    .expect("Can't create SSE_EVENTS_RECEIVED counter");
+
+    /// Queue depth per partition (placeholder for future implementation)
+    pub static ref PARTITION_QUEUE_DEPTH: IntGaugeVec = register_int_gauge_vec!(
+        "stellarroute_indexer_partition_queue_depth",
+        "Queue depth per partition",
+        &["partition"]
+    )
+    .expect("Can't create PARTITION_QUEUE_DEPTH gauge");
+
+    /// Fairness score per partition (e.g., lag variance)
+    pub static ref FAIRNESS_SCORE: IntGaugeVec = register_int_gauge_vec!(
+        "stellarroute_indexer_fairness_score",
+        "Fairness score per partition",
+        &["partition"]
+    )
+    .expect("Can't create FAIRNESS_SCORE gauge");
 }
 
 /// Record a Horizon throttle event.
@@ -75,6 +107,16 @@ pub fn update_lag(source: &str, lag_ledgers: i64) {
 /// Record offers indexed.
 pub fn record_offers_indexed(source: &str, count: u64) {
     OFFERS_INDEXED.with_label_values(&[source]).inc_by(count);
+}
+
+/// Record an SSE disconnect.
+pub fn record_sse_disconnect(source: &str) {
+    SSE_DISCONNECTS.with_label_values(&[source]).inc();
+}
+
+/// Record an SSE event received.
+pub fn record_sse_event(source: &str) {
+    SSE_EVENTS_RECEIVED.with_label_values(&[source]).inc();
 }
 
 /// Encode all metrics in Prometheus text format.

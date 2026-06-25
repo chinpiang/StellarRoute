@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TransactionRecord } from "@/types/transaction";
@@ -75,7 +75,10 @@ describe("TransactionHistory", () => {
     historyState.clearHistory = vi.fn();
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("should show skeleton loader initially", async () => {
     const { container } = render(<TransactionHistory />);
@@ -105,6 +108,39 @@ describe("TransactionHistory", () => {
     expect(screen.getByText("Transaction History")).toBeInTheDocument();
   });
 
+  it("renders asset icons and status badges in transaction rows", async () => {
+    historyState.transactions = [
+      {
+        id: "tx-1",
+        timestamp: Date.now(),
+        fromAsset: "USDC",
+        fromAmount: "10",
+        toAsset: "XLM",
+        toAmount: "9.8",
+        exchangeRate: "0.98",
+        priceImpact: "0.01",
+        minReceived: "9.7",
+        networkFee: "0.001",
+        routePath: [],
+        status: "confirmed",
+        hash: "hash-1",
+        walletAddress: "GBSU...XYZ9",
+        fromIcon: "https://example.com/usdc.svg",
+        toIcon: "https://example.com/xlm.svg",
+      },
+    ];
+
+    render(<TransactionHistory />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirmed')).toBeInTheDocument();
+      expect(screen.getByText('-10')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('img', { name: /USDC icon/i })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /XLM icon/i })).toBeInTheDocument();
+  });
+
   it("should maintain layout stability during loading to loaded transition", async () => {
     const { container } = render(<TransactionHistory />);
 
@@ -131,9 +167,20 @@ describe("TransactionHistory", () => {
 
     expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await waitFor(() => {
+      expect(screen.getByText("No Transactions Found")).toBeInTheDocument();
+    }, { timeout: 700 });
+  });
 
-    expect(container.querySelectorAll(".animate-pulse").length).toBe(0);
+  it("progressively transitions from skeleton to history content", async () => {
+    const { container } = render(<TransactionHistory />);
+
+    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(screen.queryByText("No Transactions Found")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("No Transactions Found")).toBeInTheDocument();
+    }, { timeout: 700 });
   });
 
   it("virtualizes long activity lists and swaps the rendered window on scroll", async () => {

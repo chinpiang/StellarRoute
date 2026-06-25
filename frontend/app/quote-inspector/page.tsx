@@ -94,4 +94,8 @@ export default function QuoteInspectorPage() {
       </div>
     </div>
   );
+import { QuoteInspectorPageClient } from "./QuoteInspectorPageClient";
+
+export default function QuoteInspectorPage() {
+  return <QuoteInspectorPageClient />;
 }

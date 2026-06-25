@@ -11,6 +11,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { toast } from 'sonner';
+
 import {
   StellarRouteApiError,
   stellarRouteClient,
@@ -19,9 +21,11 @@ import { QUOTE_AMOUNT_DEBOUNCE_MS } from '@/lib/quote-stale';
 import type {
   HealthStatus,
   Orderbook,
+  PriceHistoryResponse,
   PairsResponse,
   PriceQuote,
   QuoteType,
+  RoutesResponse,
   TradingPair,
 } from '@/types';
 
@@ -39,11 +43,20 @@ export interface UseApiState<T> {
 // Internal: generic fetch hook
 // ---------------------------------------------------------------------------
 
+interface UseFetchOptions {
+  refreshIntervalMs?: number;
+  skip?: boolean;
+  showToastOnError?: boolean;
+}
+
 function useFetch<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
   deps: unknown[],
-  refreshIntervalMs?: number,
-  skip?: boolean,
+  {
+    refreshIntervalMs,
+    skip = false,
+    showToastOnError = false,
+  }: UseFetchOptions = {},
 ): UseApiState<T> & { refresh: () => void } {
   const [state, setState] = useState<UseApiState<T>>({
     data: undefined,
@@ -80,17 +93,24 @@ function useFetch<T>(
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
+          const finalError = err instanceof Error ? err : new Error(String(err));
           setState({
             data: undefined,
             loading: false,
-            error: err instanceof Error ? err : new Error(String(err)),
+            error: finalError,
           });
+
+          if (showToastOnError) {
+            toast.error(finalError instanceof StellarRouteApiError ? "API Error" : "Fetch Error", {
+              description: finalError.message,
+            });
+          }
         }
       });
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, skip, ...deps]);
+  }, [tick, skip, showToastOnError, ...deps]);
 
   // Auto-refresh
   useEffect(() => {
@@ -101,6 +121,7 @@ function useFetch<T>(
 
   return { ...state, refresh };
 }
+
 
 // ---------------------------------------------------------------------------
 // Internal: simple debounce hook
@@ -128,6 +149,7 @@ export function usePairs(): UseApiState<TradingPair[]> & {
         .getPairs({ signal })
         .then((res: PairsResponse) => res.pairs),
     [],
+    { showToastOnError: true },
   );
   return result;
 }
@@ -140,11 +162,72 @@ export function useOrderbook(
   base: string,
   quote: string,
   refreshIntervalMs = 10_000,
-): UseApiState<Orderbook> & { refresh: () => void } {
-  return useFetch(
+): UseApiState<Orderbook> & {
+  refresh: () => void;
+  midpoint?: string;
+  spreadBps?: number;
+} {
+  const result = useFetch(
     (signal) => stellarRouteClient.getOrderbook(base, quote, { signal }),
     [base, quote],
-    refreshIntervalMs,
+    { refreshIntervalMs },
+  );
+
+  let midpoint: string | undefined = undefined;
+  let spreadBps: number | undefined = undefined;
+
+  if (result.data) {
+    const bids = [...result.data.bids].sort((a, b) => Number(b.price) - Number(a.price));
+    const asks = [...result.data.asks].sort((a, b) => Number(a.price) - Number(b.price));
+    const bestBid = bids[0] ? Number(bids[0].price) : null;
+    const bestAsk = asks[0] ? Number(asks[0].price) : null;
+
+    if (bestBid !== null && bestAsk !== null && bestBid > 0 && bestAsk > 0 && bestAsk >= bestBid) {
+      const mid = (bestBid + bestAsk) / 2;
+      midpoint = mid.toString();
+      spreadBps = Math.round(((bestAsk - bestBid) / mid) * 10000);
+    }
+  }
+
+  return {
+    ...result,
+    midpoint,
+    spreadBps,
+  };
+}
+
+export function usePriceHistory(
+  base: string,
+  quote: string,
+  refreshIntervalMs = 60_000,
+  skip = false,
+): UseApiState<PriceHistoryResponse> & { refresh: () => void } {
+  return useFetch(
+    (signal) => stellarRouteClient.getPriceHistory(base, quote, { signal }),
+    [base, quote],
+    { refreshIntervalMs, skip: skip || !base || !quote },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// useRoutes — fetch ranked route candidates
+// ---------------------------------------------------------------------------
+
+export function useRoutes(
+  base: string,
+  quote: string,
+  amount?: number,
+  limit = 5,
+  maxHops = 3,
+): UseApiState<RoutesResponse> & { refresh: () => void } {
+  const skip = !base || !quote;
+  return useFetch(
+    (signal) =>
+      stellarRouteClient.getRoutes(base, quote, amount, limit, maxHops, {
+        signal,
+      }),
+    [base, quote, amount, limit, maxHops],
+    { skip },
   );
 }
 
@@ -173,12 +256,13 @@ export function useQuote(
 
   return useFetch(
     (signal) =>
-      stellarRouteClient.getQuote(base, quote, debouncedAmount, type, {
-        signal,
-      }),
+      stellarRouteClient
+        .getQuote(base, quote, debouncedAmount, type, {
+          signal,
+        })
+        .then((result) => result.quote),
     [base, quote, debouncedAmount, type],
-    refreshIntervalMs,
-    skip,
+    { refreshIntervalMs, skip },
   );
 }
 
@@ -196,8 +280,7 @@ export function useBatchQuote(
   return useFetch(
     (signal) => stellarRouteClient.getQuotesBatch(requests, { signal }),
     [JSON.stringify(requests)],
-    refreshIntervalMs,
-    skip || requests.length === 0,
+    { refreshIntervalMs, skip: skip || requests.length === 0 },
   );
 }
 
@@ -211,6 +294,123 @@ export function useHealth(
   return useFetch(
     (signal) => stellarRouteClient.getHealth({ signal }),
     [],
-    refreshIntervalMs,
+    { refreshIntervalMs },
   );
+}
+
+// ---------------------------------------------------------------------------
+// useQuoteStream — WebSocket subscription for quotes
+// ---------------------------------------------------------------------------
+
+export function useQuoteStream(
+  base: string,
+  quote: string,
+  amount: number | undefined,
+) {
+  const [data, setData] = useState<PriceQuote | undefined>(undefined);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const debouncedAmount = useDebounced(amount, QUOTE_AMOUNT_DEBOUNCE_MS);
+
+  useEffect(() => {
+    const skip = !base || !quote;
+    if (skip) {
+      setData(undefined);
+      setIsConnected(false);
+      setError(null);
+      return;
+    }
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let isMounted = true;
+    let retryCount = 0;
+    let subscriptionId: string | null = null;
+
+    const connect = () => {
+      if (!isMounted) return;
+
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+      const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
+      const host = baseUrl.replace(/^https?:\/\//, '');
+      const wsUrl = `${wsProtocol}://${host}/api/v1/ws`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          if (!isMounted) return;
+          setIsConnected(true);
+          setError(null);
+          retryCount = 0;
+
+          // Send subscribe message
+          const subscribeMsg = {
+            action: 'subscribe',
+            subscription: {
+              base,
+              quote,
+              amount: debouncedAmount !== undefined ? String(debouncedAmount) : undefined,
+            },
+          };
+          ws?.send(JSON.stringify(subscribeMsg));
+        };
+
+        ws.onmessage = (event) => {
+          if (!isMounted) return;
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'subscription_confirmed') {
+              subscriptionId = msg.subscription_id;
+            } else if (msg.type === 'quote_update') {
+              setData(msg.quote);
+            } else if (msg.type === 'error') {
+              setError(new Error(msg.message || 'WebSocket Error'));
+            }
+          } catch (err) {
+            setError(err instanceof Error ? err : new Error('Parse error'));
+          }
+        };
+
+        ws.onclose = () => {
+          if (!isMounted) return;
+          setIsConnected(false);
+          subscriptionId = null;
+
+          // Exponential backoff reconnect
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 30000);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
+        };
+
+        ws.onerror = () => {
+          if (isMounted && !error) {
+            setError(new Error('WebSocket connection error'));
+          }
+        };
+      } catch (err) {
+        if (isMounted) {
+          setError(err instanceof Error ? err : new Error('Failed to create WebSocket'));
+        }
+      }
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(reconnectTimer);
+      if (ws) {
+        if (subscriptionId && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            action: 'unsubscribe',
+            subscription_id: subscriptionId,
+          }));
+        }
+        ws.close();
+      }
+    };
+  }, [base, quote, debouncedAmount]);
+
+  return { data, isConnected, error };
 }

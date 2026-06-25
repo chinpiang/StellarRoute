@@ -57,6 +57,10 @@ export function useOptimisticSwap(options: UseOptimisticSwapOptions): UseOptimis
     onConfirmedRef.current = onConfirmed;
   }, [onConfirmed]);
 
+  useEffect(() => {
+    rollbackTargetRef.current = rollbackTarget;
+  }, [rollbackTarget]);
+
   function applyRollback(snap: PreSubmitSnapshot) {
     const target = rollbackTargetRef.current;
     target.setFromToken(snap.fromToken);

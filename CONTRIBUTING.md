@@ -77,6 +77,9 @@ DATABASE_URL=postgresql://stellarroute:stellarroute_dev@localhost:5432/stellarro
 The API will be available at `http://localhost:3000`. Visit `http://localhost:3000/swagger-ui` for interactive API docs.
 
 For a more detailed environment setup, see [docs/development/SETUP.md](docs/development/SETUP.md).
+For indexer-specific runbook and troubleshooting steps, see [docs/development/indexer-guide.md](docs/development/indexer-guide.md).
+
+For frontend-specific setup and workflows, see [docs/development/frontend-guide.md](docs/development/frontend-guide.md).
 
 ---
 
@@ -141,6 +144,19 @@ cargo audit
 cargo fmt && cargo clippy -- -D warnings && cargo test
 ```
 
+CI also runs `cargo check --workspace` on every pull request and push to
+`main`/`develop`, so workspace-wide compile regressions block merges before the
+slower test jobs finish.
+
+### Testnet Smoke CI
+
+The testnet deployment workflow runs post-deploy smoke calls against the router
+contract. Configure these repository variables before enabling release blocking:
+
+- `SOROBAN_CONTRACT_ID`: pinned testnet router contract id.
+- `STELLARROUTE_SMOKE_ROUTE`: Soroban CLI route argument used by `validate_route` and `get_quote`.
+- `STELLARROUTE_SMOKE_AMOUNT_IN`: optional quote input amount; defaults to `10000000`.
+
 ### General
 
 - Keep functions and modules small and focused.
@@ -162,6 +178,8 @@ Every code contribution **must** include appropriate tests.
 | Refactor             | Existing tests must continue to pass                                         |
 
 ### Running Tests
+
+For the full matrix of Rust, contract, integration, benchmark, and frontend Vitest guidance, see [docs/development/testing-guide.md](docs/development/testing-guide.md).
 
 ```bash
 # All unit tests (no external deps needed)
@@ -208,6 +226,11 @@ Integration tests that require a live database should be marked with `#[ignore =
 - [ ] No unnecessary complexity introduced
 - [ ] Follows project conventions (naming, module structure)
 - [ ] CI is green
+
+For new or significantly changed swap UI components, also complete the
+[Swap UI component review checklist](frontend/STORYBOOK.md#swap-ui-component-review-checklist).
+It covers accessibility, loading and error states, mobile behavior,
+internationalization readiness, and manual pair selection regressions.
 
 ### After Feedback
 

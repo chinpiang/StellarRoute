@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { Share2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ExplorerLink } from '@/components/shared/ExplorerLink';
@@ -8,9 +8,13 @@ import { CopyButton } from '@/components/shared/CopyButton';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { AssetBalance } from '@/hooks/useWalletBalance';
+import type { TradeParams } from '@/hooks/useTransactionLifecycle';
 
 export interface PostSwapSuccessScreenProps {
   txHash: string;
+  tradeParams?: Partial<TradeParams>;
+  onDone?: () => void;
+  onSwapAgain?: () => void;
   explorerUrl?: string;
   className?: string;
   /** Updated spendable balances after the confirmed swap (Issue #739) */
@@ -21,6 +25,9 @@ export interface PostSwapSuccessScreenProps {
 
 export function PostSwapSuccessScreen({
   txHash,
+  tradeParams,
+  onDone,
+  onSwapAgain,
   explorerUrl,
   className,
   updatedBalances,
@@ -35,6 +42,12 @@ export function PostSwapSuccessScreen({
 
   const [isSharing, setIsSharing] = useState(false);
   const [copiedExplorer, setCopiedExplorer] = useState(false);
+  const doneButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    // Auto-focus Done button on mount for accessibility
+    doneButtonRef.current?.focus();
+  }, []);
 
   const handleShare = async () => {
     if (!txHash) return;
@@ -119,6 +132,25 @@ export function PostSwapSuccessScreen({
                   </div>
                 );
               })}
+        {/* Trade summary (optional) */}
+        {tradeParams && (
+          <div className="bg-muted/30 rounded-2xl p-4 border border-border/20 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">You pay</span>
+              <span className="font-medium">
+                {tradeParams.fromAmount} {tradeParams.fromAsset}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">You receive</span>
+              <span className="font-medium">
+                {tradeParams.toAmount} {tradeParams.toAsset}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Network fee</span>
+              <span className="font-medium">{tradeParams.networkFee}</span>
+            </div>
           </div>
         )}
 
@@ -136,6 +168,22 @@ export function PostSwapSuccessScreen({
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-center">
+          <Button
+            ref={doneButtonRef}
+            onClick={() => onDone?.()}
+            className="flex-1 h-11 rounded-xl font-bold shadow-lg shadow-green-500/20"
+          >
+            Done
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => onSwapAgain?.()}
+            className="flex-1 h-11 rounded-xl font-bold"
+          >
+            Swap Again
+          </Button>
+
           <Button
             type="button"
             onClick={handleShare}
