@@ -1,5 +1,4 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
 import * as React from "react";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";

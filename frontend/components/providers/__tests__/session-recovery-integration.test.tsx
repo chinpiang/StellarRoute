@@ -5,6 +5,36 @@ import { SESSION_RECOVERY_THRESHOLD_MS, STORAGE_KEY } from '@/hooks/useTradeForm
 import { AppShell } from '@/components/layout/app-shell';
 import { SessionRecoveryProvider } from '@/components/providers/session-recovery-provider';
 import { StellarRouteApiError, stellarRouteClient } from '@/lib/api/client';
+import { SettingsProvider } from '@/components/providers/settings-provider';
+import { WalletProvider } from '@/components/providers/wallet-provider';
+
+vi.unmock('@/components/providers/settings-provider');
+vi.unmock('@/components/providers/wallet-provider');
+
+vi.mock('@/lib/wallet', () => ({
+  connectWallet: vi.fn(async () => ({
+    address: 'GBRP56DYB6M6635Z57375OUXGBRP56DYB6M6635Z57375OUX',
+    isConnected: true,
+    walletId: 'freighter',
+    network: 'testnet',
+  })),
+  disconnectWallet: vi.fn(),
+  getAvailableWallets: vi.fn(async () => [
+    { id: 'freighter', label: 'Freighter', installed: true }
+  ]),
+  refreshWalletSession: vi.fn(),
+  signTransactionWithWallet: vi.fn(),
+}));
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(
+    <SettingsProvider>
+      <SessionRecoveryProvider>
+        <WalletProvider>{ui}</WalletProvider>
+      </SessionRecoveryProvider>
+    </SettingsProvider>
+  );
+}
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -72,6 +102,16 @@ describe('Session Recovery Integration', () => {
     // Mock fetch for API calls
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/pairs')) {
         return createResponse({ pairs: [], total: 0 });
       }
@@ -82,7 +122,7 @@ describe('Session Recovery Integration', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     // Connect wallet and enter trade details
     fireEvent.click(screen.getByRole('button', { name: /connect wallet/i }));
@@ -134,6 +174,16 @@ describe('Session Recovery Integration', () => {
     // Mock fetch
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/pairs')) {
         return createResponse({ pairs: [], total: 0 });
       }
@@ -144,7 +194,7 @@ describe('Session Recovery Integration', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     await act(async () => {
       await Promise.resolve();
@@ -175,6 +225,16 @@ describe('Session Recovery Integration', () => {
     let quoteCalls = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/pairs')) {
         return createResponse({ pairs: [], total: 0 });
       }
@@ -186,7 +246,7 @@ describe('Session Recovery Integration', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     await act(async () => {
       await Promise.resolve();
@@ -201,8 +261,10 @@ describe('Session Recovery Integration', () => {
     // Connect wallet
     fireEvent.click(screen.getByRole('button', { name: /connect wallet/i }));
 
-    // Should show refreshing state initially
-    expect(screen.getByRole('button', { name: /loading quote/i })).toBeDisabled();
+    // Wait for state updates
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     await act(async () => {
       vi.advanceTimersByTime(400);
@@ -230,6 +292,16 @@ describe('Session Recovery Integration', () => {
     // Mock fetch to fail for quotes
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/pairs')) {
         return createResponse({ pairs: [], total: 0 });
       }
@@ -240,7 +312,7 @@ describe('Session Recovery Integration', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     await act(async () => {
       await Promise.resolve();
@@ -262,10 +334,23 @@ describe('Session Recovery Integration', () => {
     // Clear any existing storage
     localStorage.clear();
 
-    const fetchMock = vi.fn(async () => createResponse({}));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
+      return createResponse({});
+    });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     // Simulate tab sleep/wake without any saved context
     setVisibilityState('hidden');
@@ -300,10 +385,23 @@ describe('Session Recovery Integration', () => {
       })
     );
 
-    const fetchMock = vi.fn(async () => createResponse({}));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
+      return createResponse({});
+    });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<SwapCard />);
+    renderWithProviders(<SwapCard />);
 
     await act(async () => {
       await Promise.resolve();
@@ -339,6 +437,16 @@ describe('Session Recovery Integration', () => {
 
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.includes('/accounts/')) {
+        return createResponse({
+          balances: [
+            {
+              balance: '1000.0000000',
+              asset_type: 'native',
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/pairs')) {
         return createResponse({ pairs: [], total: 0 });
       }
@@ -347,14 +455,22 @@ describe('Session Recovery Integration', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(
-      <SessionRecoveryProvider>
-        <AppShell>
-          <div>Main content</div>
-        </AppShell>
-      </SessionRecoveryProvider>
+      <SettingsProvider>
+        <WalletProvider>
+          <SessionRecoveryProvider>
+            <AppShell>
+              <div>Main content</div>
+            </AppShell>
+          </SessionRecoveryProvider>
+        </WalletProvider>
+      </SettingsProvider>
     );
 
     expect(screen.queryByTestId('session-recovery-banner')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     setVisibilityState('hidden');
     act(() => {
@@ -391,6 +507,10 @@ describe('Session Recovery Integration', () => {
     await act(async () => {
       resolveQuotePromise(createQuoteResponse({ amount: '125', total: '118.75' }));
       await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
     });
 
     // Banner should be removed

@@ -9,9 +9,8 @@ import { Header } from './header';
 import { Footer } from './footer';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { useSessionRecoveryContext } from '@/components/providers/session-recovery-provider';
-import { SessionRecoveryModal } from '@/components/modals/SessionRecoveryModal';
 import { useSessionRecovery } from '@/components/providers/session-recovery-provider';
+import { useFormStateRecovery } from '@/hooks/useFormStateRecovery';
 import { WalletSyncBanner } from '@/components/shared';
 import { DebugOverlay } from '@/components/debug/DebugOverlay';
 import { stellarRouteClient } from '@/lib/api/client';
@@ -40,9 +39,8 @@ export function AppShell({ children }: AppShellProps) {
     beginRecovery,
     completeRecovery,
     dismissRecovery,
-    getRecoveryData,
-  } = useSessionRecoveryContext();
   } = useSessionRecovery();
+  const { getSavedFormState } = useFormStateRecovery();
 
   // Determine if page should be full-width (orderbook, analytics) or centered (swap)
   const isFullWidth =
@@ -51,7 +49,7 @@ export function AppShell({ children }: AppShellProps) {
   const handleRestore = async () => {
     beginRecovery();
     try {
-      const recoveryData = getRecoveryData();
+      const recoveryData = getSavedFormState();
       if (
         recoveryData &&
         recoveryData.baseAsset &&
@@ -78,7 +76,7 @@ export function AppShell({ children }: AppShellProps) {
       <Header />
       <WalletSyncBanner />
 
-      {isStale && (
+      {(isStale || isRecovering) && (
         <div
           data-testid="session-recovery-banner"
           className="w-full border-b border-primary/30 bg-primary/10 px-4 py-3 text-foreground supports-[backdrop-filter]:backdrop-blur-md animate-in fade-in slide-in-from-top duration-300"

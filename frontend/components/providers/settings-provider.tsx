@@ -24,11 +24,6 @@ interface SettingsContextType {
   updateSlippage: (value: number) => void;
   updateTheme: (theme: ThemeSetting) => void;
   updateLocale: (locale: Settings['locale']) => void;
-  /** Update the accent colour applied to primary actions (issue #521). */
-  updateAccentColor: (color: AccentColor) => void;
-  /** Update the root font-size multiplier (issue #522). */
-  updateFontScale: (scale: FontScale) => void;
-  updateHighContrast: (value: boolean) => void;
   resetSettings: () => void;
   addProfile: (profile: { name: string; value: number }) => void;
   updateProfile: (id: string, updates: Partial<SlippageProfile>) => void;
@@ -143,8 +138,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings((prev) => ({ ...prev, fontScale: scale }));
   };
 
-  const updateHighContrast = (value: boolean) => {
-    setSettings((prev) => ({ ...prev, highContrast: value }));
   const updateHighContrast = (enabled: boolean) => {
     setSettings((prev) => ({ ...prev, highContrast: enabled }));
   };
@@ -237,7 +230,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         updateAccentColor,
         updateFontScale,
         updateHighContrast,
-        resetSettings,
       }}
     >
       {children}

@@ -31,8 +31,6 @@ export const DEFAULT_SETTINGS: Settings = {
   slippageTolerance: 0.5,
   theme: 'system',
   locale: DEFAULT_LOCALE,
-  accentColor: DEFAULT_ACCENT_COLOR,
-  fontScale: DEFAULT_FONT_SCALE,
   slippageProfiles: PRESET_SLIPPAGE_PROFILES,
   activeProfileId: 'balanced',
   accentColor: 'indigo',

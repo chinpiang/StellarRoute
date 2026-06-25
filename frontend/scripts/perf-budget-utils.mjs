@@ -368,10 +368,6 @@ export function parseBundleSize(buildDir) {
       ...(pages["/_app"] ?? []),
     ]);
   }
-  const swapChunks = new Set([
-    ...(pages["/swap"] ?? []),
-    ...(pages["/_app"] ?? []),
-  ]);
 
   let totalBytes = 0;
   const asyncChunks = [];

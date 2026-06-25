@@ -235,62 +235,6 @@ export default function OrderbookPage() {
               )}
 
               <div className="grid gap-4 md:grid-cols-2">
-                <Card className={cn(
-                  "p-4 space-y-3 transition-all duration-300",
-                  isHighlightedPair && "ring-2 ring-primary/30 shadow-lg shadow-primary/10"
-                )}>
-                  <h2 className="font-semibold">Bids</h2>
-                  <div className="space-y-1 text-sm">
-                    <div className="grid grid-cols-3 text-xs text-muted-foreground font-medium pb-2 border-b">
-                      <span>Price</span>
-                      <span>Amount</span>
-                      <span>Total</span>
-                    </div>
-                    {orderbook.bids.slice(0, 10).map((bid, index) => (
-                      <div 
-                        key={`${bid.price}-${index}`} 
-                        className={cn(
-                          "grid grid-cols-3 py-1.5 px-2 rounded transition-all duration-200",
-                          "hover:bg-bid-green/10 hover:scale-[1.02] cursor-pointer",
-                          isHighlightedPair && "bg-bid-green/5"
-                        )}
-                        data-testid={isHighlightedPair ? "highlighted-bid-row" : "bid-row"}
-                      >
-                        <span className="text-bid-green font-medium">{bid.price}</span>
-                        <span className="text-muted-foreground">{bid.amount}</span>
-                        <span className="text-muted-foreground">{bid.total}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-
-                <Card className={cn(
-                  "p-4 space-y-3 transition-all duration-300",
-                  isHighlightedPair && "ring-2 ring-primary/30 shadow-lg shadow-primary/10"
-                )}>
-                  <h2 className="font-semibold">Asks</h2>
-                  <div className="space-y-1 text-sm">
-                    <div className="grid grid-cols-3 text-xs text-muted-foreground font-medium pb-2 border-b">
-                      <span>Price</span>
-                      <span>Amount</span>
-                      <span>Total</span>
-                    </div>
-                    {orderbook.asks.slice(0, 10).map((ask, index) => (
-                      <div 
-                        key={`${ask.price}-${index}`} 
-                        className={cn(
-                          "grid grid-cols-3 py-1.5 px-2 rounded transition-all duration-200",
-                          "hover:bg-ask-red/10 hover:scale-[1.02] cursor-pointer",
-                          isHighlightedPair && "bg-ask-red/5"
-                        )}
-                        data-testid={isHighlightedPair ? "highlighted-ask-row" : "ask-row"}
-                      >
-                        <span className="text-ask-red font-medium">{ask.price}</span>
-                        <span className="text-muted-foreground">{ask.amount}</span>
-                        <span className="text-muted-foreground">{ask.total}</span>
-                      </div>
-                    ))}
-                  </div>
                 <Card
                   className={cn(
                     "p-4 space-y-3 transition-all duration-300",

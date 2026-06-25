@@ -24,8 +24,10 @@ export const Loader2 = Icon;
 export const Menu = Icon;
 export const Moon = Icon;
 export const RefreshCw = Icon;
+export const RefreshCcw = Icon;
 export const RotateCcw = Icon;
 export const Settings = Icon;
+export const Home = Icon;
 export const Sun = Icon;
 export const Trash2 = Icon;
 export const Wallet = Icon;
@@ -83,19 +85,8 @@ export const LayoutList = Icon;
 export const Bell = Icon;
 export const BellOff = Icon;
 
-// Expert settings icons
-export const Compass = Icon;
-export const ShieldAlert = Icon;
-
-// Compact mode icons
-export const Maximize2 = Icon;
-export const Minimize2 = Icon;
-
 // Share icon
 export const Share2 = Icon;
-
-// Clock3 icon
-export const Clock3 = Icon;
 
 
 

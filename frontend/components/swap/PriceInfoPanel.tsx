@@ -73,14 +73,6 @@ export function PriceInfoPanel({
           className={prefersReducedMotion ? 'hidden' : ''}
         />
       )}
-      
-      {/* 🔥 NEW: Sparkline Section */}
-      <div>
-        <div className="text-xs text-muted-foreground mb-1">
-          24h Price Trend
-        </div>
-        <PriceSparkline rangeData={{ "24h": mockPriceData }} />
-      </div>
 
       {/* Existing UI */}
       <div className="flex justify-between items-center text-sm">

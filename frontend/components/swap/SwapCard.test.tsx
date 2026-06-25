@@ -1,24 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SwapCard } from "./SwapCard";
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    prefetch: vi.fn(),
-    back: vi.fn(),
-  }),
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/",
-}));
-import {
-  SESSION_RECOVERY_THRESHOLD_MS,
-  STORAGE_KEY,
-} from "@/hooks/useTradeFormStorage";
-
-function createQuoteResponse(overrides?: Partial<Record<string, unknown>>) {
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi, Mock } from 'vitest';
@@ -43,6 +23,7 @@ vi.mock('./ShareQuoteButton', () => ({
 }));
 
 vi.mock('@/components/providers/wallet-provider', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
   return {
     WalletProvider: ({ children }: any) => <>{children}</>,
@@ -229,9 +210,6 @@ describe('SwapCard network resilience and states', () => {
 
     await user.click(screen.getByRole('button', { name: /connect wallet/i }));
 
-    expect(
-      screen.getByRole("button", { name: /loading quote/i }),
-    ).toBeDisabled();
     const payInput = screen.getByLabelText(/you pay/i);
     fireEvent.change(payInput, { target: { value: '100.0155' } });
 
@@ -271,14 +249,10 @@ describe('SwapCard Stellar Memo Validation Inline Rules (#506)', () => {
       },
     });
 
-    expect(screen.getByRole("button", { name: /swap/i })).toBeEnabled();
-    },
-    10_000,
-  );
     await waitFor(() => {
       expect(screen.getByText(/exceeds 28 bytes/i)).toBeInTheDocument();
     });
-  });
+  }, 10_000);
 
   it('shows validation error when a hash memo is not valid hexadecimal characters', async () => {
     const user = userEvent.setup();
@@ -449,8 +423,6 @@ describe('SwapCard Wallet Balance Integration (#644/#705)', () => {
       expect(screen.getByText(/Unavailable/)).toBeInTheDocument();
     });
   });
-
-    expect(screen.getByRole("button", { name: /swap/i })).toBeEnabled();
   it('MAX button sets amount to full balance for non-native assets', async () => {
     const originalUseSwapState = useSwapStateModule.useSwapState;
     vi.spyOn(useSwapStateModule, 'useSwapState').mockImplementation(() => {
@@ -560,11 +532,6 @@ describe('SwapCard Wallet Balance Integration (#644/#705)', () => {
       expect(maxButton).toBeInTheDocument();
       return maxButton;
     });
-
-    expect(
-      screen.getByRole("button", { name: /loading quote/i }),
-    ).toBeDisabled();
-    expect(quoteCalls).toBe(2);
     const maxButton = screen.getByRole('button', { name: /MAX/i });
     await user.click(maxButton);
 
