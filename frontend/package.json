@@ -16,6 +16,7 @@
     "storybook": "ladle dev",
     "storybook:ci": "ladle build",
     "perf:check": "node scripts/check-perf-budget.mjs",
+    "perf:check:ci": "node scripts/check-perf-budget.mjs --bundle-only",
     "perf:baseline": "node scripts/check-perf-budget.mjs --update-baseline"
   },
   "dependencies": {

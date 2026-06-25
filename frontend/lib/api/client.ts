@@ -9,12 +9,15 @@
  */
 
 import type {
+  ApiResponse,
   HealthStatus,
   Orderbook,
+  PriceHistoryResponse,
   PairsResponse,
   PriceQuote,
   QuoteType,
   ApiErrorCode,
+  RoutesResponse,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -82,10 +85,9 @@ export class StellarRouteClient {
   private readonly retries: number = 2;
 
   constructor(baseUrl?: string) {
-    this.baseUrl =
-      (baseUrl ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080')
-        // Strip trailing slash so we can always prepend / paths uniformly
-        .replace(/\/$/, '');
+    const proxyEnabled = process.env.NEXT_PUBLIC_API_PROXY === 'true';
+    const resolved = baseUrl ?? (proxyEnabled ? '' : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'));
+    this.baseUrl = resolved.replace(/\/$/, '');
   }
 
   // -------------------------------------------------------------------------
@@ -206,24 +208,140 @@ export class StellarRouteClient {
   }
 
   /**
+   * GET /api/v1/routes/{base}/{quote} — ranked route candidates
+   */
+  getRoutes(
+    base: string,
+    quote: string,
+    amount?: number,
+    limit?: number,
+    maxHops?: number,
+    opts?: FetchOptions,
+  ): Promise<RoutesResponse> {
+    const params = new URLSearchParams();
+    if (amount !== undefined) params.set('amount', String(amount));
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (maxHops !== undefined) params.set('max_hops', String(maxHops));
+    const qs = params.toString();
+    const path = `/api/v1/routes/${encodeURIComponent(base)}/${encodeURIComponent(quote)}${qs ? `?${qs}` : ''}`;
+    return this.request<RoutesResponse>(path, opts);
+  }
+
+  /**
    * GET /api/v1/quote/{base}/{quote}?amount={amount}&quote_type={sell|buy}
    *
-   * @param base   Asset identifier
-   * @param quote  Asset identifier
-   * @param amount Amount to trade (optional)
-   * @param type   "sell" (default) or "buy"
+   * Unwraps the API envelope and captures the server `request_id` from the
+   * response body and `x-request-id` header for diagnostics correlation.
    */
-  getQuote(
+  async getQuote(
     base: string,
     quote: string,
     amount?: number,
     type: QuoteType = 'sell',
     opts?: FetchOptions,
-  ): Promise<PriceQuote> {
+  ): Promise<QuoteFetchResult> {
     const params = new URLSearchParams({ quote_type: type });
     if (amount !== undefined) params.set('amount', String(amount));
     const path = `/api/v1/quote/${encodeURIComponent(base)}/${encodeURIComponent(quote)}?${params}`;
-    return this.request<PriceQuote>(path, opts);
+    return this.requestQuote(path, opts);
+  }
+
+  private async requestQuote(
+    path: string,
+    opts: FetchOptions = {},
+    retries = 2,
+  ): Promise<QuoteFetchResult> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      DEFAULT_TIMEOUT_MS,
+    );
+
+    opts.signal?.addEventListener('abort', () => controller.abort());
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const retryAfterMs = parseRetryAfterMs(
+          response.headers.get('Retry-After'),
+        );
+
+        let code: ApiErrorCode = 'unknown_error';
+        let message = `HTTP ${response.status}`;
+        let details: unknown;
+
+        try {
+          const body = await response.json();
+          code = (body.error as ApiErrorCode) ?? code;
+          message = body.message ?? message;
+          details = body.details;
+        } catch {
+          // Body was not JSON — keep defaults
+        }
+
+        if ((response.status === 429 || response.status >= 500) && retries > 0) {
+          await sleep(retryAfterMs ?? 1_000 * (3 - retries));
+          return this.requestQuote(path, opts, retries - 1);
+        }
+
+        throw new StellarRouteApiError(
+          response.status,
+          code,
+          message,
+          details,
+          retryAfterMs,
+        );
+      }
+
+      const headerRequestId = response.headers.get('x-request-id');
+      const body = (await response.json()) as
+        | ApiResponse<PriceQuote>
+        | PriceQuote;
+
+      if (body && typeof body === 'object' && 'data' in body) {
+        const envelope = body as ApiResponse<PriceQuote>;
+        return {
+          quote: envelope.data,
+          requestId: envelope.request_id || headerRequestId || generateFallbackRequestId(),
+        };
+      }
+
+      return {
+        quote: body as PriceQuote,
+        requestId: headerRequestId || generateFallbackRequestId(),
+      };
+    } catch (err) {
+      if (err instanceof StellarRouteApiError) throw err;
+
+      if (retries > 0) {
+        await sleep(500 * (3 - retries));
+        return this.requestQuote(path, opts, retries - 1);
+      }
+
+      const message =
+        err instanceof Error ? err.message : 'Network error';
+      throw new StellarRouteApiError(0, 'network_error' as ApiErrorCode, message);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * GET /api/v1/history/{base}/{quote}
+   */
+  getPriceHistory(
+    base: string,
+    quote: string,
+    opts?: FetchOptions,
+  ): Promise<PriceHistoryResponse> {
+    const path = `/api/v1/history/${encodeURIComponent(base)}/${encodeURIComponent(quote)}`;
+    return this.request<PriceHistoryResponse>(path, opts);
   }
 
   /**
@@ -260,6 +378,16 @@ export interface QuoteRequestItem {
 export interface BatchQuoteResponse {
   quotes: PriceQuote[];
   total: number;
+}
+
+/** Result of a single quote fetch including server correlation metadata. */
+export interface QuoteFetchResult {
+  quote: PriceQuote;
+  requestId: string;
+}
+
+function generateFallbackRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
 // ---------------------------------------------------------------------------

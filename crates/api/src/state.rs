@@ -17,8 +17,11 @@ use stellarroute_routing::canary::{CanaryConfig, CanaryEvaluation};
 use stellarroute_routing::health::circuit_breaker::CircuitBreakerRegistry;
 
 use crate::audit::AuditWriter;
+use crate::cache::{PrewarmConfig, PrewarmJob};
 use crate::exactlyonce::DedupeLedger;
 use crate::indexer_lag::IndexerLagMonitor;
+use crate::liquidity_alerts::LiquidityThinnessAlerts;
+use crate::webhooks::QuoteExpirationWebhookService;
 use crate::worker::{JobQueue, RouteWorkerPool, WorkerPoolConfig};
 
 /// Primary database pool for write operations plus an optional replica pool
@@ -128,6 +131,8 @@ pub struct AppState {
     pub version: String,
     /// Cache policy settings
     pub cache_policy: CachePolicy,
+    /// Optional admin auth token used for operator-only endpoints
+    pub admin_auth_token: Option<String>,
     /// Cache hit/miss counters
     pub cache_metrics: Arc<CacheMetrics>,
     /// Route computation worker pool
@@ -165,6 +170,10 @@ pub struct AppState {
     pub idempotency_ledger: Arc<DedupeLedger>,
     /// External dependency probes and dedicated circuit breakers.
     pub external_dependency_health: Arc<ExternalDependencyHealth>,
+    /// Orderbook liquidity thinness alert dispatcher.
+    pub liquidity_thinness_alerts: Arc<LiquidityThinnessAlerts>,
+    /// Quote expiration webhook dispatcher.
+    pub quote_expiration_webhooks: Arc<QuoteExpirationWebhookService>,
 }
 
 impl AppState {
@@ -191,12 +200,16 @@ impl AppState {
             ledger
         };
         let external_dependency_health = Arc::new(ExternalDependencyHealth::from_env());
+        let liquidity_thinness_alerts = Arc::new(LiquidityThinnessAlerts::from_env());
+        let quote_expiration_webhooks =
+            Arc::new(QuoteExpirationWebhookService::new(db.write_pool().clone()));
 
         Self {
             db,
             cache: None,
             version: env!("CARGO_PKG_VERSION").to_string(),
             cache_policy,
+            admin_auth_token: None,
             cache_metrics: Arc::new(CacheMetrics::default()),
             worker_pool,
             quote_single_flight: Arc::new(SingleFlight::<
@@ -218,6 +231,8 @@ impl AppState {
             indexer_lag,
             idempotency_ledger,
             external_dependency_health,
+            liquidity_thinness_alerts,
+            quote_expiration_webhooks,
         }
     }
 
@@ -258,12 +273,17 @@ impl AppState {
             ledger
         };
         let external_dependency_health = Arc::new(ExternalDependencyHealth::from_env());
+        let liquidity_thinness_alerts = Arc::new(LiquidityThinnessAlerts::from_env());
+        let quote_expiration_webhooks =
+            Arc::new(QuoteExpirationWebhookService::new(db.write_pool().clone()));
 
-        Self {
+        // Build the AppState value to return, then optionally start background jobs
+        let app_state = Self {
             db,
             cache: Some(cache_arc),
             version: env!("CARGO_PKG_VERSION").to_string(),
             cache_policy,
+            admin_auth_token: None,
             cache_metrics: Arc::new(CacheMetrics::default()),
             worker_pool,
             quote_single_flight: Arc::new(SingleFlight::<
@@ -285,7 +305,53 @@ impl AppState {
             indexer_lag,
             idempotency_ledger,
             external_dependency_health,
+            liquidity_thinness_alerts,
+            quote_expiration_webhooks,
+        };
+
+        // Start cache prewarm job if configured via env `PREWARM_PAIRS`.
+        // Format: comma separated pairs like "native/USDC,native/EURC"
+        if let Ok(pairs_list) = std::env::var("PREWARM_PAIRS") {
+            let pairs: Vec<(String, String)> = pairs_list
+                .split(',')
+                .filter_map(|s| {
+                    let s = s.trim();
+                    if s.is_empty() {
+                        return None;
+                    }
+                    let parts: Vec<&str> = s.split('/').collect();
+                    if parts.len() != 2 {
+                        return None;
+                    }
+                    Some((parts[0].to_string(), parts[1].to_string()))
+                })
+                .collect();
+
+            if !pairs.is_empty() {
+                let interval_secs = std::env::var("PREWARM_INTERVAL_SECS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(60);
+
+                let amount = std::env::var("PREWARM_AMOUNT").unwrap_or_else(|_| "1".to_string());
+                let slippage = std::env::var("PREWARM_SLIPPAGE_BPS")
+                    .ok()
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(50);
+
+                let config = PrewarmConfig {
+                    pairs,
+                    interval_secs,
+                    amount,
+                    slippage_bps: slippage,
+                };
+
+                let job = PrewarmJob::new(config, Arc::new(app_state.clone()));
+                Arc::new(job).start();
+            }
         }
+
+        app_state
     }
 
     /// Create worker pool with configuration
@@ -308,6 +374,12 @@ impl AppState {
         });
 
         pool
+    }
+
+    /// Attach an admin auth token to the state for protected operator endpoints.
+    pub fn with_admin_auth_token(mut self, token: impl Into<String>) -> Self {
+        self.admin_auth_token = Some(token.into());
+        self
     }
 
     /// Wrap in Arc for sharing across handlers

@@ -141,6 +141,7 @@ export function useSessionRecovery() {
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         updateCheckpoint(false);
       }
     }, 5000);

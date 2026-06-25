@@ -10,6 +10,8 @@ import { Footer } from './footer';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSessionRecoveryContext } from '@/components/providers/session-recovery-provider';
+import { SessionRecoveryModal } from '@/components/modals/SessionRecoveryModal';
+import { useSessionRecovery } from '@/components/providers/session-recovery-provider';
 import { WalletSyncBanner } from '@/components/shared';
 import { DebugOverlay } from '@/components/debug/DebugOverlay';
 import { stellarRouteClient } from '@/lib/api/client';
@@ -40,6 +42,7 @@ export function AppShell({ children }: AppShellProps) {
     dismissRecovery,
     getRecoveryData,
   } = useSessionRecoveryContext();
+  } = useSessionRecovery();
 
   // Determine if page should be full-width (orderbook, analytics) or centered (swap)
   const isFullWidth =

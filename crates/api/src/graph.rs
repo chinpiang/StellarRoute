@@ -3,17 +3,17 @@ use arc_swap::ArcSwap;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use std::sync::Arc;
 use stellarroute_routing::health::anomaly::LiquidityAnomalyDetector;
+use stellarroute_routing::pathfinder::LiquidityEdge;
 use tracing::{debug, error, info, warn};
 
 use stellarroute_routing::compaction::CompactedGraph;
-use stellarroute_routing::pathfinder::LiquidityEdge;
+
+// Fallback defaults used when fee information is not available in the DB.
+pub const DEFAULT_AMM_FEE_BPS: u32 = 30;
+pub const DEFAULT_SDEX_FEE_BPS: u32 = 20;
 
 /// Daemon that maintains an active in-memory cache of the routing graph
 pub struct GraphManager {
-    db: PgPool,
-    edges: Arc<ArcSwap<Vec<LiquidityEdge>>>,
-    anomaly_detector:
-        Arc<tokio::sync::Mutex<stellarroute_routing::health::anomaly::LiquidityAnomalyDetector>>,
     pub db: PgPool,
     pub edges: Arc<ArcSwap<CompactedGraph>>,
     pub anomaly_detector: Arc<tokio::sync::Mutex<LiquidityAnomalyDetector>>,
@@ -145,11 +145,17 @@ impl GraphManager {
             hash_map.insert(id, canon);
         }
 
+        // Join to `amm_pool_reserves` to pull real fee_bps for AMM venues when available.
+        // Normalized liquidity currently doesn't include fee information directly.
+        // We fallback to module-level defaults when the DB doesn't provide a value.
+
         let rows = sqlx::query(
             r#"
-            SELECT selling_asset_id, buying_asset_id, venue_type, venue_ref, price, available_amount
-            FROM normalized_liquidity
-            WHERE available_amount > 0
+            SELECT nl.selling_asset_id, nl.buying_asset_id, nl.venue_type, nl.venue_ref, nl.price, nl.available_amount,
+                   amm.fee_bps as fee_bps
+            FROM normalized_liquidity nl
+            LEFT JOIN amm_pool_reserves amm ON nl.venue_type = 'amm' AND nl.venue_ref = amm.pool_address
+            WHERE nl.available_amount > 0
             "#,
         )
         .fetch_all(&self.db)
@@ -173,6 +179,14 @@ impl GraphManager {
                     if p > 0.0 && a > 0.0 {
                         let is_amm = venue_type == "amm";
                         let venue_ref = r.get::<String, _>("venue_ref");
+                        // `fee_bps` may be present from amm_pool_reserves (for AMM) or NULL.
+                        // We'll use DB-provided value when present; otherwise fallback.
+                        let db_fee: Option<i32> = r.get::<Option<i32>, _>("fee_bps");
+                        let fee_bps_u32: u32 = if is_amm {
+                            db_fee.map(|v| v as u32).unwrap_or(DEFAULT_AMM_FEE_BPS)
+                        } else {
+                            db_fee.map(|v| v as u32).unwrap_or(DEFAULT_SDEX_FEE_BPS)
+                        };
 
                         // Perform anomaly detection
                         let mut detector = self.anomaly_detector.lock().await;
@@ -184,7 +198,8 @@ impl GraphManager {
                             (None, Some((a * 1e7) as i128))
                         };
 
-                        let anomaly_res = detector.update_and_detect(&venue_ref, reserves, depth);
+                        let _anomaly_res =
+                            detector.update_and_detect(&venue_ref, reserves, depth, None);
 
                         next_edges.push(LiquidityEdge {
                             from: e_from.clone(),
@@ -193,9 +208,7 @@ impl GraphManager {
                             venue_ref,
                             liquidity: (a * 1e7) as i128,
                             price: p,
-                            fee_bps: if is_amm { 30 } else { 20 },
-                            anomaly_score: anomaly_res.score,
-                            anomaly_reasons: anomaly_res.reasons,
+                            fee_bps: fee_bps_u32,
                         });
                     }
                 }
@@ -232,8 +245,6 @@ mod tests {
             liquidity: 100,
             price: 1.0,
             fee_bps: 30,
-            anomaly_score: 0.0,
-            anomaly_reasons: vec![],
         }];
 
         // Set initial state
@@ -255,8 +266,6 @@ mod tests {
             liquidity: 200,
             price: 0.99,
             fee_bps: 30,
-            anomaly_score: 0.0,
-            anomaly_reasons: vec![],
         }];
         manager
             .edges
@@ -285,8 +294,6 @@ mod tests {
             liquidity: 100,
             price: 1.0,
             fee_bps: 30,
-            anomaly_score: 0.0,
-            anomaly_reasons: vec![],
         }];
         manager
             .edges
@@ -315,8 +322,6 @@ mod tests {
                     liquidity: 100,
                     price: 1.0,
                     fee_bps: 30,
-                    anomaly_score: 0.0,
-                    anomaly_reasons: vec![],
                 }];
                 m2.edges.store(Arc::new(CompactedGraph::from_edges(edges)));
                 tokio::time::sleep(std::time::Duration::from_millis(1)).await;
@@ -327,5 +332,27 @@ mod tests {
             h.await.unwrap();
         }
         updater.await.unwrap();
+    }
+
+    #[test]
+    fn test_fee_selection_varied_fixtures() {
+        // Local helper reproducing the selection logic used in `sync_graph`.
+        fn select_fee(db_fee: Option<i32>, is_amm: bool) -> u32 {
+            if is_amm {
+                db_fee.map(|v| v as u32).unwrap_or(DEFAULT_AMM_FEE_BPS)
+            } else {
+                db_fee.map(|v| v as u32).unwrap_or(DEFAULT_SDEX_FEE_BPS)
+            }
+        }
+
+        // AMM with explicit DB fee
+        assert_eq!(select_fee(Some(25), true), 25);
+        // AMM missing DB fee -> fallback
+        assert_eq!(select_fee(None, true), DEFAULT_AMM_FEE_BPS);
+
+        // SDEX with explicit DB fee
+        assert_eq!(select_fee(Some(5), false), 5);
+        // SDEX missing DB fee -> fallback
+        assert_eq!(select_fee(None, false), DEFAULT_SDEX_FEE_BPS);
     }
 }

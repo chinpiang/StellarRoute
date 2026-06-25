@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 import * as React from "react";
+import { cleanup } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 
 /** jsdom does not implement matchMedia; components using prefers-reduced-motion need this. */
 Object.defineProperty(window, "matchMedia", {
@@ -79,3 +81,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.restoreAllMocks();
+});

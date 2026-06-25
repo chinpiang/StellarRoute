@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowUpDown, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, RefreshCw, Stethoscope } from 'lucide-react';
 import { AmountInput } from './AmountInput';
 import { TokenSelector } from './TokenSelector';
 import { PriceInfoPanel } from './PriceInfoPanel';
@@ -21,7 +20,7 @@ import { useOptimisticSwap } from '@/hooks/useOptimisticSwap';
 import type { PreSubmitSnapshot } from '@/types/transaction';
 import { useOptionalTradingPair } from '@/contexts/TradingPairContext';
 import { useExpertSettings } from '@/hooks/useExpertSettings';
-import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
+import { useWalletBalance } from '@/hooks/useWalletBalance';
 import {
   SESSION_RECOVERY_THRESHOLD_MS,
   type TradeFormSnapshot,
@@ -31,8 +30,11 @@ import { useQuoteStreamStatus } from '@/hooks/useQuoteStreamStatus';
 import { useCompactMode } from '@/hooks/useCompactMode';
 import { useShareableQuote } from '@/hooks/useShareableQuote';
 import { ShareQuoteButton } from './ShareQuoteButton';
-import { QuoteCountdownTimer } from './QuoteCountdownTimer';
 import { NetworkMismatchBanner } from '@/components/shared/NetworkMismatchBanner';
+import { DiagnosticsPanel } from '@/components/shared/DiagnosticsPanel';
+import { useWallet } from '@/components/providers/wallet-provider';
+import { signTransactionWithWallet } from '@/lib/wallet';
+import { submitToHorizon, getNetworkPassphrase } from '@/lib/wallet/submit';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
@@ -44,13 +46,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  getSwapCardStoryPresentation,
+  type SwapCardStoryFixture,
+} from './swapCardStory';
 
-export function SwapCard() {
+export interface SwapCardProps {
+  /** Ladle story fixture — drives deterministic UI states for visual review. */
+  storyFixture?: SwapCardStoryFixture;
+}
+
+export function SwapCard({ storyFixture }: SwapCardProps = {}) {
+  const storyPresentation = storyFixture
+    ? getSwapCardStoryPresentation(storyFixture)
+    : null;
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
-  const prefersReducedMotion = useReducedMotion();
   const tradingPairContext = useOptionalTradingPair();
-  
+
   // Wrap useSearchParams in try-catch for SSR
   let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null =
     null;
@@ -96,7 +109,7 @@ export function SwapCard() {
   // Initialize from URL parameters on mount
   useEffect(() => {
     if (!parseParams) return;
-    
+
     const urlParams = parseParams();
     if (!urlParams) return;
 
@@ -112,9 +125,6 @@ export function SwapCard() {
     }
     if (urlParams.slippage && parseFloat(urlParams.slippage) !== slippage) {
       setSlippage(parseFloat(urlParams.slippage));
-    }
-    if (urlParams.side && urlParams.side !== side) {
-      setSide(urlParams.side);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parseParams]); // Only run on mount when parseParams becomes available
@@ -135,14 +145,42 @@ export function SwapCard() {
   } = useExpertSettings();
 
   const {
-    browserNotifications,
-    permissionState: notificationPermissionState,
-    isDisabled: notificationsDisabled,
-    enableNotifications: onEnableNotifications,
-    disableNotifications: onDisableNotifications,
-  } = useBrowserNotifications();
+    address: walletAddress,
+    isConnected,
+    walletId,
+    network: walletAppNetwork,
+    networkMismatch,
+    connect,
+  } = useWallet();
 
-  const [isConnected, setIsConnected] = useState(false);
+  // Fetch real wallet balance for the selected from-asset
+  const balanceState = useWalletBalance({
+    address: walletAddress,
+    asset: fromToken,
+    isConnected,
+    network: walletAppNetwork,
+  });
+
+  // --- Issue #506: Memo State Management ---
+  const [showMemoField, setShowMemoField] = useState(false);
+  const [memoType, setMemoType] = useState<'text' | 'hash'>('text');
+  const [memoValue, setMemoValue] = useState('');
+  const memoError = useMemo(() => {
+    if (!memoValue) return null;
+    if (memoType === 'text') {
+      const byteLength = new TextEncoder().encode(memoValue).length;
+      if (byteLength > 28) {
+        return `Memo text exceeds 28 bytes (currently ${byteLength} bytes)`;
+      }
+    }
+    if (memoType === 'hash') {
+      const hexRegex = /^[0-9a-fA-F]{64}$/;
+      if (!hexRegex.test(memoValue)) {
+        return 'Hash memo must be exactly 64 hexadecimal characters';
+      }
+    }
+    return null;
+  }, [memoValue, memoType]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<AlternativeRoute | null>(
@@ -157,6 +195,7 @@ export function SwapCard() {
   );
   const [isRecoveringSession, setIsRecoveringSession] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const hiddenAtRef = useRef<number | null>(null);
   const recoveryReason: 'refresh' | 'wake' | null = wakeRecoveryOpen
@@ -180,6 +219,16 @@ export function SwapCard() {
   });
 
   const optimistic = useOptimisticSwap({
+    signTransaction: walletId
+      ? (xdr) =>
+          signTransactionWithWallet(
+            xdr,
+            walletId,
+            getNetworkPassphrase(walletAppNetwork)
+          )
+      : undefined,
+    submitTransaction: (signedXdr) =>
+      submitToHorizon(signedXdr, walletAppNetwork),
     rollbackTarget: {
       setFromToken,
       setToToken,
@@ -189,7 +238,6 @@ export function SwapCard() {
         setSelectedRoute(id ? { id, venue: '', expectedAmount: '' } : null),
       refreshQuote: quote.refresh,
     },
-    notificationPreference: { enabled: browserNotifications },
   });
 
   // Handle background transaction toasts when bypassConfirmation is enabled
@@ -199,29 +247,42 @@ export function SwapCard() {
     if (optimistic.status === 'pending') {
       toast.loading('Signing transaction...', { id: 'swap-toast' });
     } else if (optimistic.status === 'submitted') {
-      toast.loading('Transaction submitted, awaiting confirmation...', { id: 'swap-toast' });
+      toast.loading('Transaction submitted, awaiting confirmation...', {
+        id: 'swap-toast',
+      });
     } else if (optimistic.status === 'confirmed') {
       toast.success('Swap confirmed successfully!', { id: 'swap-toast' });
       setIsModalOpen(false);
       reset();
       setSelectedRoute(null);
     } else if (optimistic.status === 'failed') {
-      toast.error(optimistic.errorMessage || 'Swap failed. Please try again.', { id: 'swap-toast' });
+      toast.error(optimistic.errorMessage || 'Swap failed. Please try again.', {
+        id: 'swap-toast',
+      });
       setIsModalOpen(false);
     } else if (optimistic.status === 'dropped') {
       toast.error('Transaction timed out.', { id: 'swap-toast' });
       setIsModalOpen(false);
     }
-  }, [optimistic.status, optimistic.errorMessage, bypassConfirmation, isModalOpen, reset, setSelectedRoute]);
+  }, [
+    optimistic.status,
+    optimistic.errorMessage,
+    bypassConfirmation,
+    isModalOpen,
+    reset,
+    setSelectedRoute,
+  ]);
 
-  // Mock balance
-  const fromBalance = '100.00';
+  // Replace hardcoded balance with real wallet balance
+  const fromBalance = balanceState.balance ?? '0';
   const fromSymbol = fromToken === 'native' ? 'XLM' : fromToken.split(':')[0];
   const toSymbol = toToken === 'native' ? 'XLM' : toToken.split(':')[0];
 
   const buttonState = useMemo<SwapButtonState>(() => {
     if (optimistic.submitLock) return 'executing';
     if (!isConnected) return 'no_wallet';
+    if (networkMismatch) return 'no_wallet'; // Swap disabled while network mismatch
+    if (memoError) return 'error'; // Block swap if there is a memo validation error
     if (!fromAmount || parseFloat(fromAmount) === 0) return 'no_amount';
     if (quote.error) return 'error';
     if (requiresFreshQuote) return 'refreshing_quote';
@@ -235,13 +296,38 @@ export function SwapCard() {
     fromAmount,
     fromBalance,
     isConnected,
+    networkMismatch,
     optimistic.submitLock,
     quote.error,
     quote.isStale,
     quote.loading,
     quote.priceImpact,
     requiresFreshQuote,
+    memoError,
   ]);
+
+  const displayButtonState =
+    storyPresentation?.buttonState ?? buttonState;
+  const displayQuoteLoading =
+    storyPresentation?.quoteLoading ?? quote.loading;
+  const displayQuoteStale = storyPresentation?.quoteStale ?? quote.isStale;
+  const displayQuoteError = storyPresentation?.quoteError ?? quote.error;
+  const displayQuotePriceImpact =
+    storyPresentation?.quotePriceImpact ?? quote.priceImpact;
+  const displayToAmount = storyPresentation?.toAmount ?? toAmount;
+  const displayFormattedRate =
+    storyPresentation?.formattedRate ?? formattedRate;
+  const displayIsModalOpen =
+    storyPresentation?.confirmModalOpen ?? isModalOpen;
+  const displayOptimisticStatus =
+    storyPresentation?.optimisticStatus ?? optimistic.status;
+  const displayTradeParams =
+    storyPresentation?.tradeParams ?? optimistic.tradeParams;
+
+  useEffect(() => {
+    if (!storyPresentation?.seedFromAmount) return;
+    setFromAmount(storyPresentation.seedFromAmount);
+  }, [storyPresentation?.seedFromAmount, setFromAmount]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -311,6 +397,12 @@ export function SwapCard() {
     }
   }, [closeRecoveryModal, quote, recoveryReason, restorePending]);
 
+  // Handle "Swap Again" action: close modal but keep form state intact
+  const handleSwapAgain = useCallback(() => {
+    setIsModalOpen(false);
+    // keep tokens/amounts as-is so user can quickly modify and swap again
+  }, []);
+
   const handleConfirm = useCallback(() => {
     const snap: PreSubmitSnapshot = {
       fromToken,
@@ -330,7 +422,7 @@ export function SwapCard() {
       minReceived: `${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
       networkFee: quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM',
       routePath: [],
-      walletAddress: 'mock_wallet_address',
+      walletAddress: walletAddress ?? '',
       snapshot: snap,
     });
   }, [
@@ -355,20 +447,30 @@ export function SwapCard() {
   }, [quote.priceImpact, handleConfirm]);
 
   const handleMax = useCallback(() => {
-    setFromAmount(fromBalance);
-  }, [fromBalance, setFromAmount]);
+    // Use spendableBalance for XLM (accounts for base reserve)
+    // Use regular balance for other assets
+    const maxAmount =
+      fromToken === 'native' ? balanceState.spendableBalance : fromBalance;
+    setFromAmount(maxAmount ?? '0');
+  }, [fromToken, balanceState.spendableBalance, fromBalance, setFromAmount]);
 
   const handlePresetSelect = useCallback(
     (percentage: number) => {
       const balanceNum = parseFloat(fromBalance);
       if (isNaN(balanceNum) || balanceNum === 0) return;
 
-      const amount = balanceNum * percentage;
+      // For native assets, respect the spendable balance limit
+      const maxSpendable =
+        fromToken === 'native'
+          ? parseFloat(balanceState.spendableBalance ?? '0')
+          : balanceNum;
+
+      const amount = maxSpendable * percentage;
       // Round to 7 decimals to respect asset precision
       const rounded = Math.floor(amount * 10000000) / 10000000;
       setFromAmount(rounded.toString());
     },
-    [fromBalance, setFromAmount]
+    [fromBalance, fromToken, balanceState.spendableBalance, setFromAmount]
   );
 
   const handleSwitchTokens = useCallback(() => {
@@ -504,21 +606,15 @@ export function SwapCard() {
 
       <Card
         className={cn(
-          'relative overflow-hidden border-border/40 bg-background/60 backdrop-blur-xl shadow-2xl rounded-[32px]',
-          !prefersReducedMotion && 'transition-all duration-500 hover:shadow-primary/5',
+          'relative overflow-hidden border-border/40 bg-background/60 backdrop-blur-xl shadow-2xl rounded-[32px] transition-all duration-500 hover:shadow-primary/5',
           isCompact && 'rounded-2xl',
-          expertMode && 'border-amber-500/30 hover:shadow-amber-500/10 shadow-amber-500/5'
+          expertMode &&
+            'border-amber-500/30 hover:shadow-amber-500/10 shadow-amber-500/5'
         )}
       >
         {/* Animated Background Gradients */}
-        <div className={cn(
-          'absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl',
-          !prefersReducedMotion && 'animate-pulse'
-        )} />
-        <div className={cn(
-          'absolute -bottom-24 -right-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl',
-          !prefersReducedMotion && 'animate-pulse delay-700'
-        )} />
+        <div className="absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-700" />
 
         <CardContent className={cn('space-y-4', isCompact ? 'p-4' : 'p-6')}>
           {/* Header */}
@@ -533,10 +629,7 @@ export function SwapCard() {
                 Swap
               </h2>
               {expertMode && (
-                <span className={cn(
-                  'text-[10px] font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20',
-                  !prefersReducedMotion && 'animate-pulse'
-                )}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 animate-pulse">
                   Expert
                 </span>
               )}
@@ -559,39 +652,28 @@ export function SwapCard() {
                   <Minimize2 className="h-4.5 w-4.5 text-muted-foreground" />
                 )}
               </Button>
-              <SettingsPanel
-                slippage={slippage}
-                onSlippageChange={setSlippage}
-                deadline={deadline}
-                onDeadlineChange={setDeadline}
-                expertMode={expertMode}
-                bypassConfirmation={bypassConfirmation}
-                extendedRouteDetails={extendedRouteDetails}
-                onExpertModeChange={updateExpertMode}
-                onBypassConfirmationChange={updateBypassConfirmation}
-                onExtendedRouteDetailsChange={updateExtendedRouteDetails}
-                onReset={() => {
-                  reset();
-                  setSelectedRoute(null);
-                }}
-                browserNotifications={browserNotifications}
-                notificationPermissionState={notificationPermissionState}
-                notificationsDisabled={notificationsDisabled}
-                onEnableNotifications={onEnableNotifications}
-                onDisableNotifications={onDisableNotifications}
-              />
+              <SettingsPanel />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDiagnosticsOpen(true)}
+                aria-label={t('swap.card.diagnostics')}
+                className="h-9 w-9 rounded-xl hover:bg-muted/80"
+              >
+                <Stethoscope className="h-4.5 w-4.5 text-muted-foreground" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => quote.refresh()}
-                disabled={quote.loading}
+                disabled={displayQuoteLoading}
                 aria-label={t('swap.card.refreshQuote')}
                 className="h-9 w-9 rounded-xl hover:bg-muted/80"
               >
                 <RefreshCw
                   className={cn(
                     'h-4.5 w-4.5 text-muted-foreground',
-                    quote.loading && 'animate-spin'
+                    displayQuoteLoading && 'animate-spin'
                   )}
                 />
               </Button>
@@ -609,14 +691,13 @@ export function SwapCard() {
               <div className="flex justify-between items-start mb-1">
                 <AmountInput
                   label={t('swap.pair.youPay')}
-                  value={side === 'sell' ? fromAmount : (selectedRoute?.expectedAmount ?? toAmount)}
-                  onChange={(val) => {
-                    if (side !== 'sell') setSide('sell');
-                    setFromAmount(val);
-                  }}
+                  value={fromAmount}
+                  onChange={setFromAmount}
                   onMax={handleMax}
                   onPresetSelect={handlePresetSelect}
                   balance={`${fromBalance} ${fromSymbol}`}
+                  balanceLoading={balanceState.loading}
+                  balanceError={!!balanceState.error}
                   showPresets={isConnected}
                   className="flex-1"
                 />
@@ -635,17 +716,9 @@ export function SwapCard() {
               variant="outline"
               size="icon"
               onClick={handleSwitchTokens}
-              className={cn(
-                'absolute h-10 w-10 rounded-xl bg-background border-border/40 shadow-lg hover:shadow-primary/20 hover:border-primary/40 active:scale-95 group',
-                prefersReducedMotion
-                  ? 'transition-colors'
-                  : 'hover:scale-110 transition-all duration-300'
-              )}
+              className="absolute h-10 w-10 rounded-xl bg-background border-border/40 shadow-lg hover:shadow-primary/20 hover:border-primary/40 hover:scale-110 active:scale-95 transition-all duration-300 group"
             >
-              <ArrowUpDown className={cn(
-                'h-4 w-4 text-primary',
-                !prefersReducedMotion && 'group-hover:rotate-180 transition-transform duration-500'
-              )} />
+              <ArrowUpDown className="h-4 w-4 text-primary group-hover:rotate-180 transition-transform duration-500" />
             </Button>
           </div>
 
@@ -660,11 +733,8 @@ export function SwapCard() {
               <div className="flex justify-between items-start mb-1">
                 <AmountInput
                   label={t('swap.pair.youReceive')}
-                  value={side === 'buy' ? fromAmount : (selectedRoute?.expectedAmount ?? toAmount)}
-                  onChange={(val) => {
-                    if (side !== 'buy') setSide('buy');
-                    setFromAmount(val);
-                  }}
+                  value={selectedRoute?.expectedAmount ?? displayToAmount}
+                  readOnly
                   placeholder="0.00"
                   className="flex-1"
                   showMax={false}
@@ -679,41 +749,28 @@ export function SwapCard() {
           </div>
 
           {/* Info Panels (Conditional) */}
-          {parseFloat(fromAmount) > 0 && (
+          {(parseFloat(fromAmount) > 0 || storyPresentation?.seedFromAmount) && (
             <div
               className={cn(
-                'space-y-3',
-                isCompact ? 'space-y-2 pt-1' : 'pt-2',
-                !prefersReducedMotion && 'animate-in fade-in slide-in-from-bottom-2 duration-500'
+                'space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500',
+                isCompact ? 'space-y-2 pt-1' : 'pt-2'
               )}
             >
               <PriceInfoPanel
-                rate={formattedRate}
-                priceImpact={quote.priceImpact}
-                midpoint={quote.data?.midpoint}
-                spreadBps={quote.data?.spread_bps}
-                minReceived={`${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
+                rate={displayFormattedRate}
+                priceImpact={displayQuotePriceImpact}
+                minReceived={`${(parseFloat(displayToAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
                 networkFee={
                   quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM'
                 }
-                isLoading={quote.loading}
+                isLoading={displayQuoteLoading}
                 onExportJson={() => handleExport('json')}
                 onExportCsv={() => handleExport('csv')}
               />
-              
-              <QuoteCountdownTimer
-                expiresAtMs={quote.expiresAtMs}
-                ttlSeconds={quote.ttlSeconds}
-                onRefresh={() => quote.refresh({ force: true })}
-                isLoading={quote.loading}
-                className="px-1"
-              />
-
               <RouteDisplay
-                amountOut={selectedRoute?.expectedAmount ?? toAmount}
-                isLoading={quote.loading}
+                amountOut={selectedRoute?.expectedAmount ?? displayToAmount}
+                isLoading={displayQuoteLoading}
                 onSelect={setSelectedRoute}
-                extendedRouteDetails={extendedRouteDetails}
               />
               {/* Share Quote Button */}
               <div className="flex justify-end">
@@ -723,7 +780,6 @@ export function SwapCard() {
                     to: toToken,
                     amount: fromAmount,
                     slippage: slippage.toString(),
-                    side: side,
                   }}
                   disabled={!fromAmount || parseFloat(fromAmount) === 0}
                 />
@@ -732,7 +788,7 @@ export function SwapCard() {
           )}
 
           {/* Stale Indicator */}
-          {quote.isStale && (
+          {displayQuoteStale && (
             <span
               data-testid="stale-indicator"
               className="text-xs text-amber-500 font-medium"
@@ -778,23 +834,77 @@ export function SwapCard() {
             </span>
           )}
 
+          {/* --- Issue #506: Optional Memo Interface Module --- */}
+          <div className="space-y-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setShowMemoField(!showMemoField);
+                if (!showMemoField) setMemoValue(''); 
+              }}
+              className="text-xs font-semibold text-primary/80 hover:text-primary transition-colors flex items-center gap-1.5 focus:outline-none"
+            >
+              <span>{showMemoField ? "✕ Remove Memo" : "+ Add Optional Memo"}</span>
+            </button>
+
+            {showMemoField && (
+              <div className="p-3 bg-muted/20 border border-border/20 rounded-2xl space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={memoType === 'text' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs rounded-lg flex-1"
+                    onClick={() => { setMemoType('text'); setMemoValue(''); }}
+                  >
+                    Text Memo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={memoType === 'hash' ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs rounded-lg flex-1"
+                    onClick={() => { setMemoType('hash'); setMemoValue(''); }}
+                  >
+                    Hash Memo
+                  </Button>
+                </div>
+
+                <div className="space-y-1">
+                  <input
+                    type="text"
+                    value={memoValue}
+                    onChange={(e) => setMemoValue(e.target.value)}
+                    placeholder={memoType === 'text' ? "Enter text reference (max 28 bytes)" : "Enter 64-char hex string"}
+                    className={cn(
+                      "w-full bg-background/50 border rounded-xl px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/20",
+                      memoError ? "border-destructive focus:ring-destructive/20" : "border-border/60 focus:border-primary/40"
+                    )}
+                  />
+                  {memoError && (
+                    <p className="text-[11px] font-medium text-destructive px-1">
+                      {memoError}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Action Button */}
           <div className="pt-2">
             <SwapButton
-              state={buttonState}
+              state={displayButtonState}
               onSwap={handleSwap}
-              onConnectWallet={() => setIsConnected(true)}
-              isLoading={quote.loading}
+              onConnectWallet={() => connect('freighter')} // Connection managed by WalletProvider
+              isLoading={displayQuoteLoading}
             />
           </div>
 
           {/* Status/Error Messages */}
-          {quote.error && (
-            <p className={cn(
-              'text-center text-xs font-medium text-destructive',
-              !prefersReducedMotion && 'animate-pulse'
-            )}>
-              {quote.error.message}
+          {displayQuoteError && (
+            <p className="text-center text-xs font-medium text-destructive animate-pulse">
+              {displayQuoteError.message}
             </p>
           )}
         </CardContent>
@@ -817,11 +927,11 @@ export function SwapCard() {
 
       {!bypassConfirmation && (
         <TransactionConfirmationModal
-          isOpen={isModalOpen}
-          status={optimistic.status}
+          isOpen={displayIsModalOpen}
+          status={displayOptimisticStatus}
           txHash={optimistic.txHash}
           errorMessage={optimistic.errorMessage}
-          tradeParams={optimistic.tradeParams}
+          tradeParams={displayTradeParams}
           onConfirm={() => {}}
           onCancel={() => {
             optimistic.cancel();
@@ -843,6 +953,7 @@ export function SwapCard() {
             reset();
             setSelectedRoute(null);
           }}
+          onSwapAgain={handleSwapAgain}
         />
       )}
 
@@ -853,6 +964,14 @@ export function SwapCard() {
         isRecovering={isRecoveringSession}
         onRestore={handleRestoreRecovery}
         onDiscard={handleDiscardRecovery}
+      />
+
+      <DiagnosticsPanel
+        quote={quote.data}
+        requestId={quote.requestId}
+        lastQuotedAtMs={quote.lastQuotedAtMs}
+        isOpen={diagnosticsOpen}
+        onOpenChange={setDiagnosticsOpen}
       />
 
       {/* Footer Info */}

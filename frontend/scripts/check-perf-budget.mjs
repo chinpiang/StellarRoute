@@ -113,11 +113,13 @@ function writeResults(results, outputPath) {
  * Prints a human-readable summary to stdout.
  * Prints a single summary line when both checks pass.
  * Prints overage details and baseline deltas when checks fail.
+ * Reports async chunk sizes for monitoring.
  *
  * @param {object} results
  * @param {object|null} baseline
+ * @param {Array<{ name: string, sizeKb: number }>} asyncChunks
  */
-function printSummary(results, baseline) {
+function printSummary(results, baseline, asyncChunks = []) {
   const bundleStatus = results.bundleSizePassed ? "✓" : "✗";
   const ttiStatus = results.ttiPassed ? "✓" : "✗";
 
@@ -145,7 +147,6 @@ function printSummary(results, baseline) {
     );
   }
 
-  // Baseline delta comparison
   if (baseline !== null && results.bundleSizeDeltaKb !== undefined) {
     const bundleDelta = results.bundleSizeDeltaKb;
     const ttiDelta = results.ttiDeltaMs;
@@ -157,6 +158,18 @@ function printSummary(results, baseline) {
         `TTI: ${ttiSign}${ttiDelta.toFixed(0)} ms`
     );
   }
+
+  if (asyncChunks.length > 0) {
+    console.log("\n[perf-budget] Async chunk sizes:");
+    const top5 = asyncChunks.slice(0, 5);
+    for (const chunk of top5) {
+      const chunkName = chunk.name.split('/').pop() || chunk.name;
+      console.log(`  - ${chunkName}: ${chunk.sizeKb.toFixed(2)} KB`);
+    }
+    if (asyncChunks.length > 5) {
+      console.log(`  ... and ${asyncChunks.length - 5} more async chunks`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +178,7 @@ function printSummary(results, baseline) {
 
 async function main(argv) {
   const updateBaseline = argv.includes("--update-baseline");
+  const bundleOnly = argv.includes("--bundle-only");
 
   // Load config (exits on error)
   const config = loadConfig(CONFIG_PATH);
@@ -176,9 +190,14 @@ async function main(argv) {
   console.log("[perf-budget] Measuring bundle size...");
   const bundleSizeKb = parseBundleSize(BUILD_DIR);
 
-  // Measure TTI
-  console.log("[perf-budget] Measuring TTI...");
-  const ttiMs = runTTIMeasurement();
+  // Measure TTI (skipped in bundle-only mode — CI environments cannot run a production server)
+  let ttiMs = 0;
+  if (bundleOnly) {
+    console.log("[perf-budget] Skipping TTI measurement (--bundle-only)");
+  } else {
+    console.log("[perf-budget] Measuring TTI...");
+    ttiMs = runTTIMeasurement();
+  }
 
   // --update-baseline: capture new baseline and exit 0
   if (updateBaseline) {
@@ -200,11 +219,12 @@ async function main(argv) {
 
   // Compare thresholds
   const bundleResult = compareThreshold(bundleSizeKb, config.bundleSizeKb);
-  const ttiResult = compareThreshold(ttiMs, config.ttiMs);
+  const ttiResult = bundleOnly ? { passed: true } : compareThreshold(ttiMs, config.ttiMs);
   const { overallPassed } = computeOverallResult(bundleResult.passed, ttiResult.passed);
 
   // Build results object
   const results = buildResults({ bundleSizeKb, ttiMs }, config, baseline);
+  results.asyncChunks = asyncChunks;
 
   // Write results file
   writeResults(results, RESULTS_PATH);

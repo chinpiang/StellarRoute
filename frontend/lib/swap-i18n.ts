@@ -11,7 +11,7 @@ export const SWAP_FALLBACK_LOCALE: Locale = DEFAULT_LOCALE;
 
 type SupportedSwapLocale = "en-US" | "zh-CN";
 
-type SwapTranslationKey =
+export type SwapTranslationKey =
   | "swap.card.title"
   | "swap.card.offlineBanner"
   | "swap.card.clearForm"
@@ -86,6 +86,7 @@ type SwapTranslationKey =
   | "swap.cta.swapping"
   | "swap.cta.errorFetchingQuote"
   | "swap.card.refreshQuote"
+  | "swap.card.diagnostics"
   | "swap.card.outdated"
   | "swap.card.recoveringQuote"
   | "swap.card.recoveringQuoteCountdown"
@@ -97,7 +98,63 @@ type SwapTranslationKey =
   | "swap.shortcuts.closeHelp"
   | "swap.shortcuts.focusPayAmount"
   | "swap.shortcuts.focusReceiveAmount"
-  | "swap.shortcuts.refreshQuote";
+  | "swap.shortcuts.refreshQuote"
+  | "swap.a11y.quoteRefreshed"
+  | "swap.a11y.quoteRefreshedGeneric"
+  | "swap.a11y.quoteRefreshFailed"
+  | "settings.page.title"
+  | "settings.trade.title"
+  | "settings.trade.description"
+  | "settings.slippage.label"
+  | "settings.slippage.typical"
+  | "settings.slippage.error"
+  | "settings.appearance.title"
+  | "settings.appearance.description"
+  | "settings.theme.label"
+  | "settings.theme.placeholder"
+  | "settings.theme.light"
+  | "settings.theme.dark"
+  | "settings.theme.system"
+  | "settings.accentColor.label"
+  | "settings.accentColor.description"
+  | "settings.accentColor.custom"
+  | "settings.accessibility.title"
+  | "settings.accessibility.description"
+  | "settings.textSize.label"
+  | "settings.textSize.description"
+  | "settings.textSize.preview.title"
+  | "settings.textSize.preview.subtitle"
+  | "settings.highContrast.label"
+  | "settings.highContrast.description"
+  | "settings.notifications.title"
+  | "settings.notifications.description"
+  | "settings.notifications.transactionLabel"
+  | "settings.notifications.blocked"
+  | "settings.notifications.unsupported"
+  | "settings.notifications.enabledAria"
+  | "settings.notifications.disabledAria"
+  | "settings.notifications.blockedAria"
+  | "settings.notifications.unsupportedAria"
+  | "settings.reset.title"
+  | "settings.reset.description"
+  | "settings.reset.button"
+  | "settings.reset.success"
+  | "settings.panel.title"
+  | "settings.panel.reset"
+  | "settings.deadline.label"
+  | "settings.deadline.min"
+  | "settings.deadline.preset10m"
+  | "settings.deadline.preset30m"
+  | "settings.deadline.preset1h"
+  | "settings.deadline.custom"
+  | "settings.deadline.description"
+  | "settings.slippage.custom"
+  | "settings.slippage.deleteCustom"
+  | "settings.slippage.lowWarning"
+  | "settings.slippage.highWarning"
+  | "settings.locale.title"
+  | "settings.locale.description"
+  | "settings.locale.example";
 
 type SwapTranslations = Record<SwapTranslationKey, string>;
 
@@ -187,6 +244,7 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.cta.swapping": "Swapping...",
     "swap.cta.errorFetchingQuote": "Error fetching quote",
     "swap.card.refreshQuote": "Refresh quote",
+    "swap.card.diagnostics": "View quote diagnostics",
     "swap.card.outdated": "Quote outdated — refresh for latest price",
     "swap.card.recoveringQuote": "Retrying quote...",
     "swap.card.recoveringQuoteCountdown": "Retrying quote in {seconds}s...",
@@ -200,6 +258,62 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.shortcuts.focusPayAmount": "Focus pay amount",
     "swap.shortcuts.focusReceiveAmount": "Focus receive amount",
     "swap.shortcuts.refreshQuote": "Refresh quote",
+    "swap.a11y.quoteRefreshed": "Quote updated. {rate}",
+    "swap.a11y.quoteRefreshedGeneric": "Quote updated.",
+    "swap.a11y.quoteRefreshFailed": "Quote refresh failed. {message}",
+    "settings.page.title": "Settings",
+    "settings.trade.title": "Trade Settings",
+    "settings.trade.description": "Configure your default trading parameters.",
+    "settings.slippage.label": "Default Slippage Tolerance (%)",
+    "settings.slippage.typical": "Typical: 0.5% - 1.0%",
+    "settings.slippage.error": "Slippage must be between 0 and 50%",
+    "settings.appearance.title": "Appearance",
+    "settings.appearance.description": "Customize how StellarRoute looks on your device.",
+    "settings.theme.label": "Theme",
+    "settings.theme.placeholder": "Select theme",
+    "settings.theme.light": "Light",
+    "settings.theme.dark": "Dark",
+    "settings.theme.system": "System",
+    "settings.accentColor.label": "Accent Color",
+    "settings.accentColor.description": "Applied to buttons, links, and other primary actions.",
+    "settings.accentColor.custom": "Custom color:",
+    "settings.accessibility.title": "Accessibility",
+    "settings.accessibility.description": "Adjust text size and other accessibility options.",
+    "settings.textSize.label": "Text Size",
+    "settings.textSize.description": "Scale the interface font size up to 200% without breaking the layout.",
+    "settings.textSize.preview.title": "Preview — StellarRoute",
+    "settings.textSize.preview.subtitle": "Swap · Quote · Route · Settings",
+    "settings.highContrast.label": "High Contrast Mode",
+    "settings.highContrast.description": "Increases color contrast for improved readability and accessibility.",
+    "settings.notifications.title": "Notifications",
+    "settings.notifications.description": "Receive browser notifications for quote refreshes and swap status updates.",
+    "settings.notifications.transactionLabel": "Transaction Notifications",
+    "settings.notifications.blocked": "Notifications are blocked by your browser. Enable them in your browser settings to use this feature.",
+    "settings.notifications.unsupported": "Your browser does not support desktop notifications.",
+    "settings.notifications.enabledAria": "Browser notifications: enabled. Click to disable.",
+    "settings.notifications.disabledAria": "Browser notifications: disabled. Click to enable.",
+    "settings.notifications.blockedAria": "Browser notifications: blocked by browser. Change this in your browser settings.",
+    "settings.notifications.unsupportedAria": "Browser notifications: not supported in this browser.",
+    "settings.reset.title": "Reset Settings",
+    "settings.reset.description": "Revert all settings to their original factory defaults.",
+    "settings.reset.button": "Reset to Defaults",
+    "settings.reset.success": "Settings reset to defaults",
+    "settings.panel.title": "Settings",
+    "settings.panel.reset": "Reset",
+    "settings.deadline.label": "Transaction Deadline",
+    "settings.deadline.min": "min",
+    "settings.deadline.preset10m": "10m",
+    "settings.deadline.preset30m": "30m",
+    "settings.deadline.preset1h": "1h",
+    "settings.deadline.custom": "Custom",
+    "settings.deadline.description": "Transactions will revert if they are not confirmed within this timeframe.",
+    "settings.slippage.custom": "Custom",
+    "settings.slippage.deleteCustom": "Delete Custom Profile",
+    "settings.slippage.lowWarning": "Your transaction may fail if the price moves unfavorably by more than {value}%.",
+    "settings.slippage.highWarning": "High slippage increases the risk of frontrunning and getting a significantly worse price.",
+    "settings.locale.title": "Language & Region",
+    "settings.locale.description": "Choose your preferred language and number formatting. This affects how amounts, prices, and other numbers are displayed.",
+    "settings.locale.example": "Example: {amount} · {percent}",
   },
   "zh-CN": {
     "swap.card.title": "兑换",
@@ -279,6 +393,7 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.cta.swapping": "兑换中...",
     "swap.cta.errorFetchingQuote": "获取报价失败",
     "swap.card.refreshQuote": "刷新报价",
+    "swap.card.diagnostics": "查看报价诊断信息",
     "swap.card.outdated": "报价已过期——请刷新获取最新价格",
     "swap.card.recoveringQuote": "正在重试报价...",
     "swap.card.recoveringQuoteCountdown": "{seconds} 秒后重试报价...",
@@ -291,6 +406,62 @@ const SWAP_TRANSLATIONS: Record<SupportedSwapLocale, SwapTranslations> = {
     "swap.shortcuts.focusPayAmount": "聚焦支付数量",
     "swap.shortcuts.focusReceiveAmount": "聚焦接收数量",
     "swap.shortcuts.refreshQuote": "刷新报价",
+    "swap.a11y.quoteRefreshed": "报价已更新。{rate}",
+    "swap.a11y.quoteRefreshedGeneric": "报价已更新。",
+    "swap.a11y.quoteRefreshFailed": "报价刷新失败。{message}",
+    "settings.page.title": "设置",
+    "settings.trade.title": "交易设置",
+    "settings.trade.description": "配置你的默认交易参数。",
+    "settings.slippage.label": "默认滑点容忍度 (%)",
+    "settings.slippage.typical": "典型值：0.5% - 1.0%",
+    "settings.slippage.error": "滑点必须在 0 到 50% 之间",
+    "settings.appearance.title": "外观",
+    "settings.appearance.description": "自定义 StellarRoute 在你设备上的显示方式。",
+    "settings.theme.label": "主题",
+    "settings.theme.placeholder": "选择主题",
+    "settings.theme.light": "浅色",
+    "settings.theme.dark": "深色",
+    "settings.theme.system": "跟随系统",
+    "settings.accentColor.label": "强调色",
+    "settings.accentColor.description": "应用于按钮、链接和其他主要操作。",
+    "settings.accentColor.custom": "自定义颜色：",
+    "settings.accessibility.title": "辅助功能",
+    "settings.accessibility.description": "调整文本大小和其他辅助功能选项。",
+    "settings.textSize.label": "文本大小",
+    "settings.textSize.description": "将界面字体大小缩放至 200%，且不会破坏布局。",
+    "settings.textSize.preview.title": "预览 — StellarRoute",
+    "settings.textSize.preview.subtitle": "兑换 · 报价 · 路径 · 设置",
+    "settings.highContrast.label": "高对比度模式",
+    "settings.highContrast.description": "增加颜色对比度，提高可读性和辅助功能。",
+    "settings.notifications.title": "通知",
+    "settings.notifications.description": "接收报价刷新和交易状态更新的浏览器通知。",
+    "settings.notifications.transactionLabel": "交易通知",
+    "settings.notifications.blocked": "通知被你的浏览器阻止。请在浏览器设置中启用通知以使用此功能。",
+    "settings.notifications.unsupported": "你的浏览器不支持桌面通知。",
+    "settings.notifications.enabledAria": "浏览器通知：已启用。点击禁用。",
+    "settings.notifications.disabledAria": "浏览器通知：已禁用。点击启用。",
+    "settings.notifications.blockedAria": "浏览器通知：被浏览器阻止。请在浏览器设置中更改。",
+    "settings.notifications.unsupportedAria": "浏览器通知：此浏览器不支持。",
+    "settings.reset.title": "重置设置",
+    "settings.reset.description": "将所有设置恢复为原始出厂默认值。",
+    "settings.reset.button": "重置为默认值",
+    "settings.reset.success": "设置已重置为默认值",
+    "settings.panel.title": "设置",
+    "settings.panel.reset": "重置",
+    "settings.deadline.label": "交易期限",
+    "settings.deadline.min": "分钟",
+    "settings.deadline.preset10m": "10分钟",
+    "settings.deadline.preset30m": "30分钟",
+    "settings.deadline.preset1h": "1小时",
+    "settings.deadline.custom": "自定义",
+    "settings.deadline.description": "如果在此时间范围内未确认，交易将回滚。",
+    "settings.slippage.custom": "自定义",
+    "settings.slippage.deleteCustom": "删除自定义配置",
+    "settings.slippage.lowWarning": "如果价格对您不利的波动超过 {value}%，您的交易可能会失败。",
+    "settings.slippage.highWarning": "高滑点会增加被抢先交易和获得明显更差价格的风险。",
+    "settings.locale.title": "语言和地区",
+    "settings.locale.description": "选择你的首选语言和数字格式。这会影响金额、价格和其他数字的显示方式。",
+    "settings.locale.example": "示例：{amount} · {percent}",
   },
 };
 
