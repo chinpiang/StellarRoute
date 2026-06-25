@@ -358,6 +358,9 @@ export interface RankedRoutesResponse {
   routes: RankedRouteCandidate[];
   /** Unix timestamp of the route calculation. */
   timestamp: number;
+}
+
+/**
  * Supported time windows for price history queries.
  */
 export type PriceHistoryWindow = '1h' | '4h' | '24h' | '7d' | '30d';
