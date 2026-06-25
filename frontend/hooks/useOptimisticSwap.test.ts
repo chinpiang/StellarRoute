@@ -159,3 +159,49 @@ describe('useOptimisticSwap', () => {
     expect(result.current.submitLock).toBe(true);
   });
 });
+
+// ---- Issue #739: onConfirmed callback tests ----
+
+describe('useOptimisticSwap – onConfirmed callback (Issue #739)', () => {
+  it('calls onConfirmed when swap reaches confirmed state', async () => {
+    const rollbackTarget = makeRollbackTarget();
+    const onConfirmed = vi.fn();
+    const signFn = vi.fn(() => Promise.resolve('signed-xdr'));
+    const submitFn = vi.fn(() => Promise.resolve({ hash: 'tx-hash-confirmed' }));
+
+    const { result } = renderHook(() =>
+      useOptimisticSwap({ rollbackTarget, signTransaction: signFn, submitTransaction: submitFn, onConfirmed })
+    );
+
+    await act(async () => {
+      await result.current.initiateSwap({ ...mockTradeParams, snapshot: mockSnapshot });
+    });
+
+    // Wait for async lifecycle to complete
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(onConfirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onConfirmed when swap fails', async () => {
+    const rollbackTarget = makeRollbackTarget();
+    const onConfirmed = vi.fn();
+    const signFn = vi.fn(() => Promise.reject(new Error('rejected')));
+
+    const { result } = renderHook(() =>
+      useOptimisticSwap({ rollbackTarget, signTransaction: signFn, onConfirmed })
+    );
+
+    await act(async () => {
+      await result.current.initiateSwap({ ...mockTradeParams, snapshot: mockSnapshot });
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(onConfirmed).not.toHaveBeenCalled();
+  });
+});

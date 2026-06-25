@@ -22,6 +22,8 @@ import { cn } from '@/lib/utils';
 import type { TransactionStatus } from '@/types/transaction';
 import type { TradeParams } from '@/hooks/useTransactionLifecycle';
 import { PostSwapSuccessScreen } from './PostSwapSuccessScreen';
+import type { AssetBalance } from '@/hooks/useWalletBalance';
+import { FeeBreakdownPanel } from './FeeBreakdownPanel';
 
 export interface TransactionConfirmationModalProps {
   isOpen: boolean;
@@ -35,6 +37,18 @@ export interface TransactionConfirmationModalProps {
   onResubmit: () => void;
   onDismiss: () => void;
   onDone: () => void;
+  /** Updated balances to show on the success screen (Issue #739) */
+  updatedBalances?: AssetBalance[];
+  /**
+   * Fee breakdown for the review step (Issue #744).
+   * When omitted the panel is shown in "unavailable" state.
+   */
+  feeData?: {
+    protocolFees: Array<{ name: string; amount: string; description: string }>;
+    networkCosts: Array<{ name: string; amount: string; description: string }>;
+    totalFee: string;
+    netOutput: string;
+  };
 }
 
 const STATUS_CONFIG = {
@@ -114,6 +128,8 @@ export function TransactionConfirmationModal({
   onResubmit,
   onDismiss,
   onDone,
+  updatedBalances,
+  feeData,
 }: TransactionConfirmationModalProps) {
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -203,9 +219,35 @@ export function TransactionConfirmationModal({
             </div>
           )}
 
+          {/* Fee Breakdown — Issue #744: shown in review state before user confirms */}
+          {status === 'review' && (
+            <FeeBreakdownPanel
+              isDataAvailable={!!feeData}
+              protocolFees={feeData?.protocolFees ?? []}
+              networkCosts={feeData?.networkCosts ?? []}
+              totalFee={feeData?.totalFee ?? ''}
+              netOutput={feeData?.netOutput ?? ''}
+            />
+          )}
+
           {/* Confirmed: dedicated post-swap success content */}
           {status === 'confirmed' && txHash && (
-            <PostSwapSuccessScreen txHash={txHash} />
+            <PostSwapSuccessScreen
+              txHash={txHash}
+              updatedBalances={updatedBalances}
+              affectedAssets={
+                tradeParams
+                  ? [
+                      tradeParams.fromAsset === 'native'
+                        ? 'XLM'
+                        : tradeParams.fromAsset.split(':')[0] ?? tradeParams.fromAsset,
+                      tradeParams.toAsset === 'native'
+                        ? 'XLM'
+                        : tradeParams.toAsset.split(':')[0] ?? tradeParams.toAsset,
+                    ]
+                  : undefined
+              }
+            />
           )}
         </div>
 

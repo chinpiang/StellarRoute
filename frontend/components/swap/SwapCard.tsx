@@ -14,10 +14,12 @@ import { SwapButton, SwapButtonState } from './SwapButton';
 import { SettingsPanel } from '../settings/SettingsPanel';
 import { HighImpactConfirmModal } from './HighImpactConfirmModal';
 import { TransactionConfirmationModal } from './TransactionConfirmationModal';
+import { FeeBreakdownPanel } from './FeeBreakdownPanel';
 import { QuoteStreamStatusIndicator } from './QuoteStreamStatusIndicator';
 import { SessionRecoveryModal } from './SessionRecoveryModal';
 import { useSwapState } from '@/hooks/useSwapState';
 import { useOptimisticSwap } from '@/hooks/useOptimisticSwap';
+import { useWalletBalance } from '@/hooks/useWalletBalance';
 import type { PreSubmitSnapshot } from '@/types/transaction';
 import { useOptionalTradingPair } from '@/contexts/TradingPairContext';
 import { useExpertSettings } from '@/hooks/useExpertSettings';
@@ -134,6 +136,9 @@ export function SwapCard() {
     updateExtendedRouteDetails,
   } = useExpertSettings();
 
+  // Wallet balances — refetched automatically after confirmed swaps (Issue #739)
+  const walletBalance = useWalletBalance();
+
   const {
     browserNotifications,
     permissionState: notificationPermissionState,
@@ -186,6 +191,7 @@ export function SwapCard() {
       refreshQuote: quote.refresh,
     },
     notificationPreference: { enabled: browserNotifications },
+    onConfirmed: walletBalance.refetch,
   });
 
   // Handle background transaction toasts when bypassConfirmation is enabled
@@ -210,8 +216,13 @@ export function SwapCard() {
     }
   }, [optimistic.status, optimistic.errorMessage, bypassConfirmation, isModalOpen, reset, setSelectedRoute]);
 
-  // Mock balance
-  const fromBalance = '100.00';
+  // Real spendable balance from Horizon; falls back to '0.00' while loading
+  const fromBalanceEntry = walletBalance.balances.find(
+    (b) =>
+      b.asset === fromToken ||
+      (fromToken === 'native' && b.asset === 'native')
+  );
+  const fromBalance = fromBalanceEntry?.spendable ?? '0.00';
   const fromSymbol = fromToken === 'native' ? 'XLM' : fromToken.split(':')[0];
   const toSymbol = toToken === 'native' ? 'XLM' : toToken.split(':')[0];
 
@@ -711,6 +722,40 @@ export function SwapCard() {
                 onSelect={setSelectedRoute}
                 extendedRouteDetails={extendedRouteDetails}
               />
+
+              {/* Fee Breakdown — Issue #744: visible before user confirms */}
+              <FeeBreakdownPanel
+                isDataAvailable={!quote.loading && !quote.error && parseFloat(fromAmount) > 0}
+                protocolFees={[
+                  {
+                    name: t('swap.fees.routerFee.name'),
+                    amount: quote.fee ? `${(quote.fee * 0.1).toFixed(5)} XLM` : '0.00000 XLM',
+                    description: t('swap.fees.routerFee.description'),
+                  },
+                  {
+                    name: t('swap.fees.poolFee.name'),
+                    amount: quote.fee ? `${(quote.fee * 0.3).toFixed(5)} XLM` : '0.00000 XLM',
+                    description: t('swap.fees.poolFee.description'),
+                  },
+                ]}
+                networkCosts={[
+                  {
+                    name: t('swap.fees.baseFee.name'),
+                    amount: '0.00001 XLM',
+                    description: t('swap.fees.baseFee.description'),
+                  },
+                  {
+                    name: t('swap.fees.operationFee.name'),
+                    amount: quote.fee ? `${(quote.fee * 0.6).toFixed(5)} XLM` : '0.00001 XLM',
+                    description: t('swap.fees.operationFee.description'),
+                  },
+                ]}
+                totalFee={
+                  quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM'
+                }
+                netOutput={`${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`}
+              />
+
               {/* Share Quote Button */}
               <div className="flex justify-end">
                 <ShareQuoteButton
@@ -839,6 +884,39 @@ export function SwapCard() {
             reset();
             setSelectedRoute(null);
           }}
+          updatedBalances={walletBalance.balances}
+          feeData={
+            quote.fee !== undefined && parseFloat(fromAmount) > 0
+              ? {
+                  protocolFees: [
+                    {
+                      name: t('swap.fees.routerFee.name'),
+                      amount: `${(quote.fee * 0.1).toFixed(5)} XLM`,
+                      description: t('swap.fees.routerFee.description'),
+                    },
+                    {
+                      name: t('swap.fees.poolFee.name'),
+                      amount: `${(quote.fee * 0.3).toFixed(5)} XLM`,
+                      description: t('swap.fees.poolFee.description'),
+                    },
+                  ],
+                  networkCosts: [
+                    {
+                      name: t('swap.fees.baseFee.name'),
+                      amount: '0.00001 XLM',
+                      description: t('swap.fees.baseFee.description'),
+                    },
+                    {
+                      name: t('swap.fees.operationFee.name'),
+                      amount: `${(quote.fee * 0.6).toFixed(5)} XLM`,
+                      description: t('swap.fees.operationFee.description'),
+                    },
+                  ],
+                  totalFee: `${quote.fee.toFixed(5)} XLM`,
+                  netOutput: `${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
+                }
+              : undefined
+          }
         />
       )}
 
