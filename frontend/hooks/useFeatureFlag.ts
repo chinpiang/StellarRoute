@@ -7,7 +7,8 @@ export type FlagName =
   | "batch_swaps"
   | "swap_ui_v2"
   | "transaction_history"
-  | "advanced_slippage";
+  | "advanced_slippage"
+  | "real_xdr";
 
 export type FlagMap = Partial<Record<FlagName, boolean>>;
 

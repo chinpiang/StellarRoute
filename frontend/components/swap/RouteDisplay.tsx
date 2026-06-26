@@ -23,6 +23,8 @@ export interface AlternativeRoute {
     venue: string;
     fee: string;
   }>;
+  rawPath?: any[];
+  priceImpact?: number;
 }
 
 interface RouteDisplayProps {
@@ -39,6 +41,9 @@ interface RouteDisplayProps {
   onSelect?: (route: AlternativeRoute) => void;
   /** Key to trigger route switch animation */
   routeKey?: string | number;
+  selectedRouteId?: string | null;
+  fromAssetCode?: string;
+  toAssetCode?: string;
 }
 
 const ROUTE_VIRTUALIZATION_THRESHOLD = 8;
@@ -134,16 +139,20 @@ export function RouteDisplay({
   alternativeRoutes,
   onSelect,
   routeKey,
+  selectedRouteId: selectedRouteIdProp,
+  fromAssetCode,
+  toAssetCode,
 }: RouteDisplayProps) {
   const [showDetails, setShowDetails] = useState(false);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [localSelectedRouteId, setLocalSelectedRouteId] = useState<string | null>(null);
   const routes = alternativeRoutes ?? buildAlternativeRoutes(amountOut);
+  
+  const activeRouteId = selectedRouteIdProp !== undefined ? selectedRouteIdProp : localSelectedRouteId;
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const { animateInClass } = useRouteSwitchTransition(routeKey ?? selectedRouteId ?? undefined);
+  const { animateInClass } = useRouteSwitchTransition(routeKey ?? activeRouteId ?? undefined);
   const { showSkeleton, contentClassName } = useProgressiveLoadingTransition(isLoading);
-
   const handleSelect = (route: AlternativeRoute) => {
-    setSelectedRouteId(route.id);
+    setLocalSelectedRouteId(route.id);
     emitRouteEvent(route.venue, route.hops?.length ?? 0);
     onSelect?.(route);
   };
@@ -161,7 +170,7 @@ export function RouteDisplay({
     ? routes.slice(virtualWindow.startIndex, virtualWindow.endIndex)
     : routes;
   const selectedRoute =
-    routes.find((route) => route.id === selectedRouteId) ?? routes[0] ?? null;
+    routes.find((route) => route.id === activeRouteId) ?? routes[0] ?? null;
   const selectedRouteHops = selectedRoute?.hops ?? [];
   const totalRouteFee = selectedRouteHops.reduce(
     (sum, hop) => sum + parseFeeToNumber(hop.fee),
@@ -207,33 +216,68 @@ export function RouteDisplay({
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center bg-muted/50 rounded-lg p-3 overflow-hidden gap-1 sm:gap-0 sm:justify-between transition-colors duration-150 hover:bg-muted/70">
-        <div className="flex flex-col flex-shrink-0 min-w-[40px] items-center sm:items-start">
-          <span className="text-xs font-semibold">XLM</span>
-          <span className="text-[10px] text-muted-foreground leading-none">
-            Stellar
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center bg-muted/50 rounded-lg p-3 overflow-hidden gap-1 sm:gap-2 justify-center sm:justify-between transition-colors duration-150 hover:bg-muted/70">
+        {selectedRouteHops.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-center sm:justify-between gap-1.5 w-full">
+            {selectedRouteHops.map((hop, index) => (
+              <div key={hop.id} className="flex items-center gap-1.5">
+                {index === 0 && (
+                  <div className="flex flex-col flex-shrink-0 min-w-[40px] items-center sm:items-start">
+                    <span className="text-xs font-semibold">{hop.fromAsset}</span>
+                  </div>
+                )}
+                
+                <ArrowRight className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <ArrowDown className="h-4 w-4 text-muted-foreground sm:hidden" />
 
-        <ArrowDown className="h-4 w-4 text-muted-foreground flex-shrink-0 sm:hidden" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto flex-shrink-0 hidden sm:block" />
+                <div className="px-2 py-1 bg-background rounded-md border text-xs font-medium shadow-sm flex-shrink-0 text-center">
+                  {hop.venue}
+                </div>
 
-        <div className="px-2 py-1 bg-background rounded-md border text-xs font-medium shadow-sm flex-shrink-0 text-center mx-1">
-          AQUA Pool
-        </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <ArrowDown className="h-4 w-4 text-muted-foreground sm:hidden" />
 
-        <ArrowDown className="h-4 w-4 text-muted-foreground flex-shrink-0 sm:hidden" />
-        <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto flex-shrink-0 hidden sm:block" />
+                <div className="flex flex-col items-center sm:items-end">
+                  <span className="text-xs font-semibold">{hop.toAsset}</span>
+                  {index === selectedRouteHops.length - 1 && (
+                    <span
+                      className="text-[10px] text-muted-foreground truncate max-w-[80px]"
+                      title={`${amountOut} expected`}
+                    >
+                      {amountOut} exp.
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col flex-shrink-0 min-w-[40px] items-center sm:items-start">
+              <span className="text-xs font-semibold">{fromAssetCode || 'XLM'}</span>
+            </div>
 
-        <div className="flex flex-col text-right flex-shrink-0 min-w-[60px] items-center sm:items-end">
-          <span className="text-xs font-semibold">USDC</span>
-          <span
-            className="text-[10px] text-muted-foreground truncate max-w-[80px]"
-            title={`${amountOut} expected`}
-          >
-            {amountOut} exp.
-          </span>
-        </div>
+            <ArrowDown className="h-4 w-4 text-muted-foreground flex-shrink-0 sm:hidden" />
+            <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto flex-shrink-0 hidden sm:block" />
+
+            <div className="px-2 py-1 bg-background rounded-md border text-xs font-medium shadow-sm flex-shrink-0 text-center mx-1">
+              {selectedRoute?.venue || 'Auto'}
+            </div>
+
+            <ArrowDown className="h-4 w-4 text-muted-foreground flex-shrink-0 sm:hidden" />
+            <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto flex-shrink-0 hidden sm:block" />
+
+            <div className="flex flex-col text-right flex-shrink-0 min-w-[60px] items-center sm:items-end">
+              <span className="text-xs font-semibold">{toAssetCode || 'USDC'}</span>
+              <span
+                className="text-[10px] text-muted-foreground truncate max-w-[80px]"
+                title={`${amountOut} expected`}
+              >
+                {amountOut} exp.
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="pt-3 border-t border-border/50 overflow-x-hidden">
@@ -267,7 +311,7 @@ export function RouteDisplay({
                   >
                     <AlternativeRouteButton
                       route={route}
-                      isSelected={selectedRouteId === route.id}
+                      isSelected={activeRouteId === route.id}
                       onSelect={handleSelect}
                     />
                   </div>
@@ -280,7 +324,7 @@ export function RouteDisplay({
                 <AlternativeRouteButton
                   key={route.id}
                   route={route}
-                  isSelected={selectedRouteId === route.id}
+                  isSelected={activeRouteId === route.id}
                   onSelect={handleSelect}
                 />
               ))}
