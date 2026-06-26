@@ -16,7 +16,9 @@ import { toast } from 'sonner';
 import {
   StellarRouteApiError,
   stellarRouteClient,
+  STATUS_PAGE_REFRESH_MS,
 } from '@/lib/api/client';
+import type { DepsHealthStatus } from '@/lib/api/client';
 import { QUOTE_AMOUNT_DEBOUNCE_MS } from '@/lib/quote-stale';
 import type {
   HealthStatus,
@@ -289,10 +291,24 @@ export function useBatchQuote(
 // ---------------------------------------------------------------------------
 
 export function useHealth(
-  refreshIntervalMs = 60_000,
+  refreshIntervalMs = STATUS_PAGE_REFRESH_MS,
 ): UseApiState<HealthStatus> & { refresh: () => void } {
   return useFetch(
     (signal) => stellarRouteClient.getHealth({ signal }),
+    [],
+    { refreshIntervalMs },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// useHealthDeps — external dependency health status
+// ---------------------------------------------------------------------------
+
+export function useHealthDeps(
+  refreshIntervalMs = STATUS_PAGE_REFRESH_MS,
+): UseApiState<DepsHealthStatus> & { refresh: () => void } {
+  return useFetch(
+    (signal) => stellarRouteClient.getDepsHealth({ signal }),
     [],
     { refreshIntervalMs },
   );

@@ -40,6 +40,7 @@ import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
 import { SwapWarningCenter, type SwapWarning } from './SwapWarningCenter';
 import { quoteExportToCsv, type QuoteExportPayload } from '@/lib/quote-export';
+import { getTraderErrorCopy, toTraderErrorLine } from '@/lib/api/trader-error-copy';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import {
   Dialog,
@@ -270,13 +271,14 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
 
       // 4. Quote error response from API
       if (quote.error) {
-        const id = `quote_error_${quote.error.message}`;
+        const copy = getTraderErrorCopy(quote.error);
+        const id = `quote_error_${quote.error.message || 'unknown'}`;
         if (!dismissedWarningIds.has(id)) {
           list.push({
             id,
             type: 'error',
-            title: 'Failed to Get Quote',
-            message: quote.error.message || 'An unexpected error occurred while fetching the price quote.',
+            title: copy.headline,
+            message: `${copy.explanation} ${copy.recoveryAction}`,
             timestamp: Date.now(),
             dismissible: true,
           });
@@ -342,7 +344,9 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
       reset();
       setSelectedRoute(null);
     } else if (optimistic.status === 'failed') {
-      toast.error(optimistic.errorMessage || 'Swap failed. Please try again.', {
+      const errorObj = optimistic.errorMessage ? new Error(optimistic.errorMessage) : new Error('Unknown error');
+      const copy = getTraderErrorCopy(errorObj);
+      toast.error(toTraderErrorLine(copy), {
         id: 'swap-toast',
       });
       setIsModalOpen(false);
@@ -1014,7 +1018,7 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
           {/* Status/Error Messages */}
           {displayQuoteError && (
             <p className="text-center text-xs font-medium text-destructive animate-pulse">
-              {displayQuoteError.message}
+              {toTraderErrorLine(getTraderErrorCopy(displayQuoteError))}
             </p>
           )}
         </CardContent>
