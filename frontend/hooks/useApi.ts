@@ -9,14 +9,14 @@
  *  - Debounced parameters for useQuote
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toast } from 'sonner';
 
-import {
-  StellarRouteApiError,
-  stellarRouteClient,
-} from '@/lib/api/client';
+import { useWallet } from '@/components/providers/wallet-provider';
+import { StellarRouteApiError } from '@/lib/api/client';
+import { useStellarRouteClient } from '@/hooks/useStellarRouteClient';
+import { getApiBaseUrl } from '@/lib/network-endpoints';
 import { QUOTE_AMOUNT_DEBOUNCE_MS } from '@/lib/quote-stale';
 import type {
   HealthStatus,
@@ -143,12 +143,13 @@ function useDebounced<T>(value: T, delayMs: number): T {
 export function usePairs(): UseApiState<TradingPair[]> & {
   refresh: () => void;
 } {
+  const client = useStellarRouteClient();
   const result = useFetch(
     (signal) =>
-      stellarRouteClient
+      client
         .getPairs({ signal })
         .then((res: PairsResponse) => res.pairs),
-    [],
+    [client],
     { showToastOnError: true },
   );
   return result;
@@ -163,9 +164,10 @@ export function useOrderbook(
   quote: string,
   refreshIntervalMs = 10_000,
 ): UseApiState<Orderbook> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   return useFetch(
-    (signal) => stellarRouteClient.getOrderbook(base, quote, { signal }),
-    [base, quote],
+    (signal) => client.getOrderbook(base, quote, { signal }),
+    [client, base, quote],
     { refreshIntervalMs },
   );
 }
@@ -176,9 +178,10 @@ export function usePriceHistory(
   refreshIntervalMs = 60_000,
   skip = false,
 ): UseApiState<PriceHistoryResponse> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   return useFetch(
-    (signal) => stellarRouteClient.getPriceHistory(base, quote, { signal }),
-    [base, quote],
+    (signal) => client.getPriceHistory(base, quote, { signal }),
+    [client, base, quote],
     { refreshIntervalMs, skip: skip || !base || !quote },
   );
 }
@@ -194,13 +197,14 @@ export function useRoutes(
   limit = 5,
   maxHops = 3,
 ): UseApiState<RoutesResponse> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   const skip = !base || !quote;
   return useFetch(
     (signal) =>
-      stellarRouteClient.getRoutes(base, quote, amount, limit, maxHops, {
+      client.getRoutes(base, quote, amount, limit, maxHops, {
         signal,
       }),
-    [base, quote, amount, limit, maxHops],
+    [client, base, quote, amount, limit, maxHops],
     { skip },
   );
 }
@@ -219,6 +223,7 @@ export function useQuote(
   /** Optional polling interval. Prefer `useQuoteRefresh` for manual/auto refresh UX. */
   refreshIntervalMs?: number,
 ): UseApiState<PriceQuote> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   const debouncedAmount = useDebounced(amount, QUOTE_AMOUNT_DEBOUNCE_MS);
 
   const skip =
@@ -230,12 +235,12 @@ export function useQuote(
 
   return useFetch(
     (signal) =>
-      stellarRouteClient
+      client
         .getQuote(base, quote, debouncedAmount, type, {
           signal,
         })
         .then((result) => result.quote),
-    [base, quote, debouncedAmount, type],
+    [client, base, quote, debouncedAmount, type],
     { refreshIntervalMs, skip },
   );
 }
@@ -251,9 +256,10 @@ export function useBatchQuote(
   skip = false,
   refreshIntervalMs?: number,
 ): UseApiState<BatchQuoteResponse> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   return useFetch(
-    (signal) => stellarRouteClient.getQuotesBatch(requests, { signal }),
-    [JSON.stringify(requests)],
+    (signal) => client.getQuotesBatch(requests, { signal }),
+    [client, JSON.stringify(requests)],
     { refreshIntervalMs, skip: skip || requests.length === 0 },
   );
 }
@@ -265,9 +271,10 @@ export function useBatchQuote(
 export function useHealth(
   refreshIntervalMs = 60_000,
 ): UseApiState<HealthStatus> & { refresh: () => void } {
+  const client = useStellarRouteClient();
   return useFetch(
-    (signal) => stellarRouteClient.getHealth({ signal }),
-    [],
+    (signal) => client.getHealth({ signal }),
+    [client],
     { refreshIntervalMs },
   );
 }
@@ -281,10 +288,12 @@ export function useQuoteStream(
   quote: string,
   amount: number | undefined,
 ) {
+  const { network } = useWallet();
   const [data, setData] = useState<PriceQuote | undefined>(undefined);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const debouncedAmount = useDebounced(amount, QUOTE_AMOUNT_DEBOUNCE_MS);
+  const apiBaseUrl = useMemo(() => getApiBaseUrl(network), [network]);
 
   useEffect(() => {
     const skip = !base || !quote;
@@ -304,7 +313,7 @@ export function useQuoteStream(
     const connect = () => {
       if (!isMounted) return;
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+      const baseUrl = apiBaseUrl;
       const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
       const host = baseUrl.replace(/^https?:\/\//, '');
       const wsUrl = `${wsProtocol}://${host}/api/v1/ws`;
@@ -384,7 +393,7 @@ export function useQuoteStream(
         ws.close();
       }
     };
-  }, [base, quote, debouncedAmount]);
+  }, [base, quote, debouncedAmount, apiBaseUrl]);
 
   return { data, isConnected, error };
 }

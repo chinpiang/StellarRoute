@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { API_BASE_URL } from '@/lib/constants';
+import { useWallet } from '@/components/providers/wallet-provider';
+import { getApiBaseUrl } from '@/lib/network-endpoints';
 
 interface ComponentStatus {
   [key: string]: string;
@@ -94,6 +95,9 @@ function ComponentStatusItem({ name, status }: { name: string; status: string })
 }
 
 export function StatusDashboard() {
+  const { network } = useWallet();
+  const healthBaseUrl = useMemo(() => getApiBaseUrl(network), [network]);
+
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [depsData, setDepsData] = useState<DependencyHealthData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,12 +110,12 @@ export function StatusDashboard() {
       setError(null);
       
       // Fetch basic health
-      const healthRes = await fetch(`${API_BASE_URL.replace('/api/v1', '')}/health`);
+      const healthRes = await fetch(`${healthBaseUrl}/health`);
       const healthJson = await healthRes.json();
       setHealthData(healthJson.data);
 
       // Fetch dependency health
-      const depsRes = await fetch(`${API_BASE_URL.replace('/api/v1', '')}/health/deps`);
+      const depsRes = await fetch(`${healthBaseUrl}/health/deps`);
       const depsJson = await depsRes.json();
       setDepsData(depsJson.data);
 
@@ -121,7 +125,7 @@ export function StatusDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [healthBaseUrl]);
 
   useEffect(() => {
     fetchStatus();

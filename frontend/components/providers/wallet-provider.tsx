@@ -9,6 +9,13 @@ import {
   getAvailableWallets,
   refreshWalletSession,
 } from '@/lib/wallet';
+import {
+  isNetworkAllowed,
+  loadPersistedNetwork,
+  normalizeAppNetwork,
+  persistNetwork,
+  resolveInitialNetwork,
+} from '@/lib/network-policy';
 import type {
   AvailableWallet,
   SupportedWallet,
@@ -62,7 +69,9 @@ export function WalletProvider({
 }: WalletProviderProps) {
   const [address, setAddress] = React.useState<string | null>(null);
   const [isConnected, setIsConnected] = React.useState(false);
-  const [network, setNetwork] = React.useState<WalletNetwork>(defaultNetwork);
+  const [network, setNetworkState] = React.useState<WalletNetwork>(() =>
+    resolveInitialNetwork(null, defaultNetwork),
+  );
   const [walletNetwork, setWalletNetwork] = React.useState<WalletNetwork | null>(null);
   const [walletId, setWalletId] = React.useState<SupportedWallet | null>(null);
   const [availableWallets, setAvailableWallets] = React.useState<AvailableWallet[]>([]);
@@ -93,7 +102,21 @@ export function WalletProvider({
     if (savedPreference !== null) {
       setAutoReconnectPreferredState(savedPreference === 'true');
     }
+    setNetworkState(resolveInitialNetwork(loadPersistedNetwork(), defaultNetwork));
     setDidLoadReconnectPreference(true);
+  }, [defaultNetwork]);
+
+  const setNetwork = React.useCallback((nextNetwork: WalletNetwork) => {
+    if (!isNetworkAllowed(nextNetwork)) {
+      setError({
+        message: `Network "${nextNetwork}" is not available in this environment.`,
+      });
+      return;
+    }
+
+    setNetworkState(nextNetwork);
+    persistNetwork(nextNetwork);
+    setError(null);
   }, []);
 
   const setAutoReconnectPreferred = React.useCallback((enabled: boolean) => {
@@ -234,6 +257,22 @@ export function WalletProvider({
     }
   }, [walletId, isConnected, address, isTransactionPending]);
 
+  const previousNetworkRef = React.useRef(network);
+
+  React.useEffect(() => {
+    if (!isConnected || !walletId) {
+      previousNetworkRef.current = network;
+      return;
+    }
+
+    if (previousNetworkRef.current === network) {
+      return;
+    }
+
+    previousNetworkRef.current = network;
+    void refreshAccount();
+  }, [network, isConnected, walletId, refreshAccount]);
+
   React.useEffect(() => {
     if (!didLoadReconnectPreference) {
       return;
@@ -274,7 +313,10 @@ export function WalletProvider({
     };
   }, [autoReconnectPreferred, isConnected, isLoading, reconnect]);
 
-  const networkMismatch = isConnected && walletNetwork !== null && walletNetwork !== network;
+  const networkMismatch =
+    isConnected &&
+    walletNetwork !== null &&
+    normalizeAppNetwork(walletNetwork) !== normalizeAppNetwork(network);
 
   const refreshCapabilities = React.useCallback(async () => {
     // mock implementation

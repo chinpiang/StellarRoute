@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { WalletNetwork } from '@/lib/wallet/types';
+import { getHorizonUrl } from '@/lib/network-endpoints';
 import { XLM_FEE_RESERVE } from '@/lib/stellar-reserves';
 
 interface HorizonBalanceLine {
@@ -20,15 +21,6 @@ interface WalletBalanceState {
   spendableBalance: string | null;
   loading: boolean;
   error: Error | null;
-}
-
-const HORIZON_URLS: Record<string, string> = {
-  testnet: 'https://horizon-testnet.stellar.org',
-  mainnet: 'https://horizon.stellar.org',
-};
-
-function normalizeNetwork(network: WalletNetwork | null): string {
-  return String(network ?? 'testnet').toLowerCase();
 }
 
 function findAssetBalance(
@@ -73,8 +65,6 @@ export function useWalletBalance({
     error: null,
   });
 
-  const networkKey = normalizeNetwork(network);
-
   useEffect(() => {
     if (!isConnected || !address) {
       setState({
@@ -86,16 +76,7 @@ export function useWalletBalance({
       return;
     }
 
-    const horizonUrl = HORIZON_URLS[networkKey];
-    if (!horizonUrl) {
-      setState({
-        balance: null,
-        spendableBalance: null,
-        loading: false,
-        error: new Error(`Unsupported network: ${network}`),
-      });
-      return;
-    }
+    const horizonUrl = getHorizonUrl(network);
 
     const controller = new AbortController();
     setState((previous) => ({ ...previous, loading: true, error: null }));
@@ -131,7 +112,7 @@ export function useWalletBalance({
       });
 
     return () => controller.abort();
-  }, [address, asset, isConnected, network, networkKey]);
+  }, [address, asset, isConnected, network]);
 
   return useMemo(() => state, [state]);
 }
