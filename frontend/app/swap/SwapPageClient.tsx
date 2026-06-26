@@ -1,9 +1,23 @@
 "use client";
 
-import { SwapCard } from "@/components/swap/SwapCard";
 import { SplitView } from "@/components/swap/SplitView";
 import { useSplitView } from "@/hooks/useSplitView";
 import dynamic from "next/dynamic";
+
+const SwapCard = dynamic(
+  () => import("@/components/swap/SwapCard").then((m) => m.SwapCard),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full max-w-[480px] h-[580px] bg-card/40 backdrop-blur-md rounded-[32px] border border-border/20 flex items-center justify-center shadow-2xl">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <span className="text-xs text-muted-foreground font-mono animate-pulse">Initializing swap interface...</span>
+        </div>
+      </div>
+    )
+  }
+);
 
 const RouteDisplay = dynamic(
   () => import("@/components/swap/RouteDisplay").then((m) => m.RouteDisplay),

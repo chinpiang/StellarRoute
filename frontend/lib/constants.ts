@@ -9,6 +9,9 @@ export const APP_NAME = 'StellarRoute';
 export const APP_DESCRIPTION =
   'Best-price routing across Stellar DEX and Soroban AMM pools';
 
+export const STELLAR_NETWORK =
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'testnet';
+
 export const ROUTES = {
   HOME: '/',
   SWAP: '/',

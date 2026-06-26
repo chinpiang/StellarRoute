@@ -34,10 +34,14 @@ import { NetworkMismatchBanner } from '@/components/shared/NetworkMismatchBanner
 import { DiagnosticsPanel } from '@/components/shared/DiagnosticsPanel';
 import { useWallet } from '@/components/providers/wallet-provider';
 import { signTransactionWithWallet } from '@/lib/wallet';
-import { submitToHorizon, getNetworkPassphrase } from '@/lib/wallet/submit';
+import { submitToHorizon, getNetworkPassphrase, getHorizonUrl } from '@/lib/wallet/submit';
+import { buildPathPaymentXdr } from '@/lib/wallet/xdr-builder';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
+import { useRoutes } from '@/hooks/useApi';
+import { emitRouteEvent } from '@/lib/telemetry';
 import { SwapWarningCenter, type SwapWarning } from './SwapWarningCenter';
 import { quoteExportToCsv, type QuoteExportPayload } from '@/lib/quote-export';
 import { Maximize2, Minimize2 } from 'lucide-react';
@@ -64,6 +68,7 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
   const { t } = useSwapI18n();
   const { isCompact, toggleCompact } = useCompactMode();
   const tradingPairContext = useOptionalTradingPair();
+  const { enabled: realXdrEnabled } = useFeatureFlag('real_xdr');
 
   // Wrap useSearchParams in try-catch for SSR
   let parseParams: ReturnType<typeof useShareableQuote>['parseParams'] | null =
@@ -106,6 +111,101 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
     snapshotCurrent,
     reset,
   } = useSwapState();
+
+  // Fetch ranked routes from /api/v1/routes
+  const routesState = useRoutes(
+    fromToken,
+    toToken,
+    parseFloat(fromAmount) || undefined
+  );
+
+  // Merge quote alternatives and routes endpoint candidates
+  const mergedAlternativeRoutes = useMemo(() => {
+    const list: AlternativeRoute[] = [];
+
+    // 1. Add any alternative routes embedded in the quote
+    if (quote.data?.alternativeRoutes) {
+      quote.data.alternativeRoutes.forEach((alt) => {
+        list.push({
+          id: alt.id,
+          venue: alt.venue,
+          expectedAmount: alt.expectedAmount.startsWith('≈') ? alt.expectedAmount : `≈ ${alt.expectedAmount}`,
+          hops: [],
+        });
+      });
+    }
+
+    // 2. Add routes from the /api/v1/routes endpoint
+    if (routesState.data?.routes) {
+      routesState.data.routes.forEach((candidate, index) => {
+        const hopVenues = candidate.path.map((hop) => {
+          const source = hop.source;
+          if (source === 'sdex') return 'SDEX';
+          if (source.startsWith('amm:')) {
+            const name = source.substring(4);
+            if (name.toLowerCase() === 'aqua') return 'AQUA Pool';
+            if (name.toLowerCase() === 'phoenix') return 'Phoenix AMM';
+            if (name.toLowerCase() === 'blend') return 'Blend Pool';
+            return name.charAt(0).toUpperCase() + name.slice(1);
+          }
+          return source;
+        });
+        const uniqueHopVenues = hopVenues.filter((v, i) => i === 0 || v !== hopVenues[i - 1]);
+        const venueName = uniqueHopVenues.join(' + ');
+
+        const hops = candidate.path.map((hop, hopIndex) => {
+          const fromSymbol = hop.from_asset.asset_type === 'native' ? 'XLM' : (hop.from_asset.asset_code || 'UNK');
+          const toSymbol = hop.to_asset.asset_type === 'native' ? 'XLM' : (hop.to_asset.asset_code || 'UNK');
+          
+          let sourceName = hop.source;
+          if (sourceName === 'sdex') sourceName = 'SDEX';
+          else if (sourceName.startsWith('amm:')) {
+            const name = sourceName.substring(4);
+            if (name.toLowerCase() === 'aqua') sourceName = 'AQUA Pool';
+            else if (name.toLowerCase() === 'phoenix') sourceName = 'Phoenix AMM';
+            else if (name.toLowerCase() === 'blend') sourceName = 'Blend Pool';
+            else sourceName = name.charAt(0).toUpperCase() + sourceName.slice(1);
+          }
+
+          const feeXLM = ((hop.fee_bps || 30) / 100000).toFixed(5) + ' XLM';
+
+          return {
+            id: `candidate-${index}-hop-${hopIndex}`,
+            fromAsset: fromSymbol,
+            toAsset: toSymbol,
+            venue: sourceName,
+            fee: feeXLM,
+          };
+        });
+
+        // Avoid adding duplicates of the same venue name
+        const isDuplicate = list.some((item) => item.venue === venueName);
+        if (!isDuplicate) {
+          list.push({
+            id: `route-api-${index}`,
+            venue: venueName,
+            expectedAmount: `≈ ${parseFloat(candidate.estimated_output).toFixed(4)}`,
+            hops,
+            rawPath: candidate.path,
+            priceImpact: candidate.impact_bps / 100,
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [quote.data, routesState.data]);
+
+  const handleRouteSelect = useCallback((route: AlternativeRoute) => {
+    setSelectedRoute(route);
+    // Trigger re-quote
+    quote.refresh();
+    
+    const hopCount = route.rawPath ? route.rawPath.length : (quote.data?.path.length ?? 1);
+    emitRouteEvent(route.venue, hopCount);
+  }, [quote]);
+
+  const isRoutesLoading = quote.loading || routesState.loading;
 
   // Initialize from URL parameters on mount
   useEffect(() => {
@@ -315,6 +415,21 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
       : undefined,
     submitTransaction: (signedXdr) =>
       submitToHorizon(signedXdr, walletAppNetwork),
+    // Build real Stellar path-payment XDR when the integration flag is enabled.
+    // Falls back to "mock_xdr" stub when flag is off (default during development).
+    buildXdr: realXdrEnabled && walletAddress
+      ? (params) =>
+          buildPathPaymentXdr({
+            walletAddress: params.walletAddress || walletAddress,
+            fromAsset: params.fromAsset,
+            fromAmount: params.fromAmount,
+            toAsset: params.toAsset,
+            minReceived: params.minReceived,
+            routePath: params.routePath,
+            networkPassphrase: getNetworkPassphrase(walletAppNetwork),
+            horizonUrl: getHorizonUrl(walletAppNetwork),
+          })
+      : undefined,
     rollbackTarget: {
       setFromToken,
       setToToken,
@@ -498,16 +613,19 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
       selectedRouteId: selectedRoute?.id ?? null,
     };
     setIsModalOpen(true);
+    const finalToAmount = selectedRoute?.expectedAmount
+      ? selectedRoute.expectedAmount.replace('≈ ', '')
+      : toAmount;
     optimistic.initiateSwap({
       fromAsset: fromToken,
       fromAmount,
       toAsset: toToken,
-      toAmount: selectedRoute?.expectedAmount ?? toAmount,
+      toAmount: finalToAmount,
       exchangeRate: formattedRate,
       priceImpact: quote.priceImpact.toString(),
-      minReceived: `${(parseFloat(toAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
+      minReceived: `${(parseFloat(finalToAmount || '0') * (1 - slippage / 100)).toFixed(4)} ${toSymbol}`,
       networkFee: quote.fee ? `${quote.fee.toFixed(5)} XLM` : '0.00001 XLM',
-      routePath: [],
+      routePath: selectedRoute?.rawPath ?? (quote.data?.path || []),
       walletAddress: walletAddress ?? '',
       snapshot: snap,
     });
@@ -522,6 +640,7 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
     quote,
     toSymbol,
     optimistic,
+    walletAddress,
   ]);
 
   const handleSwap = useCallback(() => {

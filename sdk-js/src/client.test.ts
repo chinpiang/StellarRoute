@@ -376,6 +376,13 @@ describe('getRankedRoutes', () => {
     );
     const err = await new StellarRouteClient({ retries: 0 })
       .getRankedRoutes('native', 'GHOST')
+      .catch((e: unknown) => e);
+
+    expect(isStellarRouteApiError(err)).toBe(true);
+    expect((err as StellarRouteApiError).isNotFound()).toBe(true);
+  });
+});
+
 // ── getPriceHistory ─────────────────────────────────────────────────────────
 
 describe('getPriceHistory', () => {

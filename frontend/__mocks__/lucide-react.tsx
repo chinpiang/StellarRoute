@@ -91,5 +91,7 @@ export const Share2 = Icon;
 // Split icon
 export const Split = Icon;
 
-
-
+// QuoteInspector icons
+export const ShieldCheck = Icon;
+export const Diff = Icon;
+export const Scale = Icon;

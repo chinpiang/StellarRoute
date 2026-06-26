@@ -126,7 +126,7 @@ describe("RouteDisplay", () => {
     expect(screen.getByText("0.00003 XLM")).toBeInTheDocument();
   });
 
-  it("instantly transitions from skeleton to content", () => {
+  it("progressively transitions from skeleton to content", () => {
     vi.useFakeTimers();
     try {
       const { rerender } = render(<RouteDisplay amountOut="50.0" isLoading={true} />);
@@ -136,7 +136,7 @@ describe("RouteDisplay", () => {
       rerender(<RouteDisplay amountOut="50.0" isLoading={false} />);
 
       act(() => {
-        vi.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(400);
       });
 
       expect(document.querySelectorAll(".animate-pulse").length).toBe(0);

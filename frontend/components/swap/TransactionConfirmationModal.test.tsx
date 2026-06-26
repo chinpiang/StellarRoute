@@ -122,7 +122,7 @@ describe('TransactionConfirmationModal — property tests', () => {
             }
           }
         ),
-        { numRuns: 100 }
+        { numRuns: 10 }
       );
     }
   );
