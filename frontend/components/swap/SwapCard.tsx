@@ -987,8 +987,12 @@ export function SwapCard({ storyFixture }: SwapCardProps = {}) {
               />
               <RouteDisplay
                 amountOut={selectedRoute?.expectedAmount ?? displayToAmount}
-                isLoading={displayQuoteLoading}
-                onSelect={setSelectedRoute}
+                isLoading={isRoutesLoading}
+                alternativeRoutes={mergedAlternativeRoutes}
+                selectedRouteId={selectedRoute?.id ?? null}
+                onSelect={handleRouteSelect}
+                fromAssetCode={fromSymbol}
+                toAssetCode={toSymbol}
               />
               {/* Share Quote Button */}
               <div className="flex justify-end">
