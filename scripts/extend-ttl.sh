@@ -14,6 +14,10 @@
 #   - A funded deployer identity configured
 #   - Contract deployed (deployment artifact exists)
 #
+# Optional environment variables:
+#   - TTL_ALERT_WEBHOOK_URL: HTTPS webhook URL for posting TTL alerts
+#     (for example, a Slack incoming webhook)
+#
 # Cost Analysis:
 #   - extend_storage_ttl cost depends on number of registered pools.
 #   - Each pool TTL extension costs ~100 stroops (0.00001 XLM).
@@ -165,11 +169,17 @@ alert_failure() {
     log_error "Error: ${error_msg}"
     log_error "Action required: manually extend TTLs or investigate."
 
-    # Placeholder: integrate with your alerting system
-    # Examples:
-    #   curl -X POST "https://hooks.slack.com/..." -d "{\"text\": \"TTL extension failed: ${error_msg}\"}"
-    #   aws sns publish --topic-arn "..." --message "TTL extension failed"
-    #   echo "${error_msg}" | mail -s "StellarRoute TTL Alert" ops@example.com
+    if [[ -n "${TTL_ALERT_WEBHOOK_URL:-}" ]]; then
+        local payload
+        payload=$(printf '{"text":"StellarRoute TTL extension failed on %s: %s"}' "$NETWORK" "$error_msg")
+        if curl -fsS -X POST -H 'Content-Type: application/json' --data "$payload" "$TTL_ALERT_WEBHOOK_URL" >/dev/null 2>&1; then
+            log_info "Sent TTL alert to webhook"
+        else
+            log_warn "Failed to send TTL alert webhook; verify TTL_ALERT_WEBHOOK_URL"
+        fi
+    else
+        log_warn "TTL_ALERT_WEBHOOK_URL is not set; skipping webhook alert"
+    fi
 }
 
 # ── Main Logic ────────────────────────────────────────────────────────

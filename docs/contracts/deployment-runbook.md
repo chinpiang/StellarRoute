@@ -222,6 +222,35 @@ The script uses the router's `get_ttl_status` response:
 - Mainnet extension costs real XLM; monitor spend carefully.
 - Testnet extension is a low-cost operation, but still requires a funded account.
 
+### Alerting and escalation
+
+The TTL extension script can send a webhook alert when an extension attempt fails. Configure an optional environment variable before running the script:
+
+```bash
+export TTL_ALERT_WEBHOOK_URL="https://hooks.slack.com/services/EXAMPLE/WEBHOOK/TOKEN"
+```
+
+The value should be a full HTTPS webhook URL. For Slack, the script posts a JSON payload to that endpoint.
+
+Example Slack incoming webhook snippet:
+
+```bash
+curl -X POST \
+  -H 'Content-Type: application/json' \
+  --data '{"text":"StellarRoute TTL extension failed on testnet: check the operator logs and contract state"}' \
+  "$TTL_ALERT_WEBHOOK_URL"
+```
+
+If TTL extension fails twice in a row, escalate immediately:
+
+1. Review the latest operator logs and the contract state for the affected network.
+2. Verify whether the contract is still healthy and whether storage keys are nearing expiry.
+3. If the issue persists, pause or reduce automated reliance on the bot and notify the on-call operator or maintainer.
+4. Re-run the TTL check manually and, if needed, extend the affected state directly.
+5. Record the incident and the remediation steps for follow-up.
+
+For the operational risk behind this process, see [audit/assumptions.md](../../audit/assumptions.md).
+
 ## Pool registration with `scripts/register-pools.sh`
 
 ### Usage
