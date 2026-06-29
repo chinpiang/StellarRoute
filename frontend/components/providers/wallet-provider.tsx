@@ -4,7 +4,6 @@ import * as React from 'react';
 import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import {
-  checkAddressChange,
   connectWallet,
   disconnectWallet,
   getAvailableWallets,
@@ -364,54 +363,6 @@ export function WalletProvider({
   const dismissSyncMismatch = React.useCallback(() => {
     setSyncMismatch(false);
   }, []);
-
-  // -------------------------------------------------------------------------
-  // Issue #737 — xBull passive account-change detection
-  // Poll checkAddressChange for both Freighter and xBull while connected.
-  // A 3-second interval is used so we catch switches quickly without hammering
-  // the extension or draining battery. The interval is cleared on unmount and
-  // whenever the wallet disconnects.
-  // -------------------------------------------------------------------------
-  const POLL_INTERVAL_MS = 3_000;
-
-  React.useEffect(() => {
-    if (!isConnected || !walletId || !address) return;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const newAddress = await checkAddressChange(walletId, address);
-        if (!cancelled && newAddress) {
-          // Address changed — update wallet context to reflect the new account
-          setAddress(newAddress);
-          setAccountSwitchState({
-            isDetecting: false,
-            hasChanged: true,
-            previousAddress: address,
-          });
-          console.log('[WalletProvider] Account change detected via polling:', newAddress);
-        }
-      } catch {
-        // Ignore polling errors silently
-      }
-    };
-
-    const intervalId = setInterval(() => {
-      void poll();
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-    // address intentionally included so we always compare against the latest known address
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, walletId, address]);
-
-  const networkMismatch = isConnected && walletNetwork !== null && walletNetwork !== network;
-  const stubSpendableBalance = isConnected ? '10000.0000000' : null;
 
   const value: WalletContextValue = {
     address,

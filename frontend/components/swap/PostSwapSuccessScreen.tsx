@@ -7,7 +7,6 @@ import { ExplorerLink } from '@/components/shared/ExplorerLink';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import type { AssetBalance } from '@/hooks/useWalletBalance';
 import type { TradeParams } from '@/hooks/useTransactionLifecycle';
 
 export interface PostSwapSuccessScreenProps {
@@ -17,10 +16,6 @@ export interface PostSwapSuccessScreenProps {
   onSwapAgain?: () => void;
   explorerUrl?: string;
   className?: string;
-  /** Updated spendable balances after the confirmed swap (Issue #739) */
-  updatedBalances?: AssetBalance[];
-  /** Symbols of the assets involved in the swap, used to filter displayed balances */
-  affectedAssets?: string[];
 }
 
 export function PostSwapSuccessScreen({
@@ -30,8 +25,6 @@ export function PostSwapSuccessScreen({
   onSwapAgain,
   explorerUrl,
   className,
-  updatedBalances,
-  affectedAssets,
 }: PostSwapSuccessScreenProps) {
   const url = useMemo(
     () =>
@@ -102,36 +95,6 @@ export function PostSwapSuccessScreen({
       </div>
 
       <div className="w-full space-y-4">
-        {/* Updated balances after swap (Issue #739) */}
-        {updatedBalances && updatedBalances.length > 0 && (
-          <div className="rounded-xl border border-border/30 bg-muted/20 p-3 space-y-1.5">
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Updated Balances
-            </p>
-            {updatedBalances
-              .filter((b) => {
-                if (!affectedAssets || affectedAssets.length === 0) return true;
-                const code =
-                  b.asset === 'native'
-                    ? 'XLM'
-                    : b.asset.split(':')[0] ?? b.asset;
-                return affectedAssets.includes(code) || affectedAssets.includes(b.asset);
-              })
-              .map((b) => {
-                const code =
-                  b.asset === 'native' ? 'XLM' : b.asset.split(':')[0] ?? b.asset;
-                const displayBalance = parseFloat(b.spendable).toFixed(4);
-                return (
-                  <div
-                    key={b.asset}
-                    className="flex justify-between text-sm"
-                    data-testid={`updated-balance-${code}`}
-                  >
-                    <span className="text-muted-foreground">{code}</span>
-                    <span className="font-medium tabular-nums">{displayBalance}</span>
-                  </div>
-                );
-              })}
         {/* Trade summary (optional) */}
         {tradeParams && (
           <div className="bg-muted/30 rounded-2xl p-4 border border-border/20 space-y-2 text-sm">

@@ -506,6 +506,7 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
         setSelectedRoute(id ? { id, venue: '', expectedAmount: '' } : null),
       refreshQuote: quote.refresh,
     },
+    onConfirmed: balanceState.refetch,
   });
 
   // Handle background transaction toasts when bypassConfirmation is enabled
