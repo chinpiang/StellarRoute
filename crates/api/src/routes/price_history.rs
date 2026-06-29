@@ -8,12 +8,31 @@ use sqlx::Row;
 use std::{sync::Arc, time::Duration};
 use tracing::{debug, warn};
 
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
 use crate::{
     cache,
     error::{ApiError, Result},
-    models::{request::AssetPath, AssetInfo, PriceHistoryPoint, PriceHistoryResponse},
+    models::{request::AssetPath, AssetInfo},
     state::AppState,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PriceHistoryPoint {
+    pub timestamp: i64,
+    pub price: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PriceHistoryResponse {
+    pub base_asset: AssetInfo,
+    pub quote_asset: AssetInfo,
+    pub window: String,
+    pub source: String,
+    pub generated_at: i64,
+    pub points: Vec<PriceHistoryPoint>,
+}
 
 /// Return a 24h historical price series for a selected trading pair.
 #[utoipa::path(
@@ -187,7 +206,10 @@ async fn find_trading_pair_id(
     match row {
         Some(row) => Ok(row.get("id")),
         None => {
-            warn!("Trading pair not found: base_id={:?}, quote_id={:?}", base_id, quote_id);
+            warn!(
+                "Trading pair not found: base_id={:?}, quote_id={:?}",
+                base_id, quote_id
+            );
             Err(ApiError::NotFound("Trading pair not found".to_string()))
         }
     }
