@@ -42,7 +42,6 @@ import { useWallet } from '@/components/providers/wallet-provider';
 import { signTransactionWithWallet } from '@/lib/wallet';
 import { submitToHorizon, getNetworkPassphrase, getHorizonUrl } from '@/lib/wallet/submit';
 import { buildPathPaymentXdr } from '@/lib/wallet/xdr-builder';
-import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useSwapI18n } from '@/lib/swap-i18n';
