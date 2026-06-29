@@ -13,7 +13,9 @@ const APP_NETWORK = 'TESTNET';
 export function WalletButton() {
   const [showQrCode, setShowQrCode] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
-  const [walletNetworkForOnboarding, setWalletNetworkForOnboarding] = useState<string | null>(null);
+  const [walletNetworkForOnboarding, setWalletNetworkForOnboarding] = useState<
+    string | null
+  >(null);
 
   const {
     address,
@@ -31,9 +33,13 @@ export function WalletButton() {
     ? `${address.slice(0, 4)}...${address.slice(-4)}`
     : '';
 
-  const copyAddress = () => {
+  const copyAddress = async () => {
     if (address) {
-      void navigator.clipboard.writeText(address);
+      try {
+        await navigator.clipboard.writeText(address);
+      } catch (err) {
+        console.error('Failed to copy address:', err);
+      }
     }
   };
 
@@ -56,7 +62,12 @@ export function WalletButton() {
       setShowOnboardingModal(true);
       markOnboardingAsSeenAndOpened();
     }
-  }, [showOnboarding, isFirstConnection, showOnboardingModal, markOnboardingAsSeenAndOpened]);
+  }, [
+    showOnboarding,
+    isFirstConnection,
+    showOnboardingModal,
+    markOnboardingAsSeenAndOpened,
+  ]);
 
   const handleOnboardingConnect = async (walletId: any) => {
     try {
@@ -73,6 +84,7 @@ export function WalletButton() {
     return (
       <>
         <Button
+          id="wallet-button"
           onClick={() => setShowOnboardingModal(true)}
           className="min-h-[44px]"
         >

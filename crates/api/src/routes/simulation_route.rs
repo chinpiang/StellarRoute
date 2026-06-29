@@ -25,7 +25,11 @@ use stellarroute_routing::policy::RoutingPolicy;
 use crate::{
     error::{ApiError, Result},
     models::{
+<<<<<<< HEAD
         request::{AssetPath, QuoteParams, QuoteType},
+=======
+        request::{AssetPath, DEFAULT_SLIPPAGE_BPS},
+>>>>>>> origin/main
         response::{ApiResponse, ExclusionDiagnostics, QuoteResponse},
     },
     state::AppState,
@@ -175,7 +179,22 @@ pub async fn simulate_route_dry_run(
         }
     }
 
+<<<<<<< HEAD
     // ── 2) Build the routing-engine SwapPath ─────────────────────────────────
+=======
+    // ── 2) Apply slippage bounds (default + per-hop overrides) ───────────
+    let default_slippage_bps = body.slippage_bps.unwrap_or(DEFAULT_SLIPPAGE_BPS);
+    let mut routing_policy = RoutingPolicy::default().with_default_slippage_bps(default_slippage_bps);
+    apply_slippage_overrides_to_policy(&mut routing_policy, &body.slippage_bps_overrides);
+
+    // ── 3) Build per-hop QuoteResponse diagnostics (no execution) ───────
+    // We simulate the chain as a sequence of single-hop quotes by calling
+    // existing DB-backed quote logic for each consecutive (from,to) pair.
+
+    // Import helpers from quote.rs via direct path calls.
+    // (We implement a minimal constrained simulation here by calling
+    // `/api/v1/quote` internals: get_quote_inner + compute_quote_response.)
+>>>>>>> origin/main
     //
     // `request_route_to_swap_path` is the single source of truth for
     // constructing the multi-hop chain.  The returned `SwapPath` carries
@@ -216,6 +235,7 @@ pub async fn simulate_route_dry_run(
     let mut path_steps = Vec::with_capacity(swap_path.hops.len());
     let mut exclusion_diagnostics: Option<ExclusionDiagnostics> = None;
 
+<<<<<<< HEAD
     // Borrow endpoints for the final QuoteResponse envelope.
     let first_hop = &body.route.hops[0];
     let last_hop = &body.route.hops[body.route.hops.len() - 1];
@@ -226,6 +246,13 @@ pub async fn simulate_route_dry_run(
             .get(hop.venue_ref.as_str())
             .copied()
             .unwrap_or(default_slippage_bps);
+=======
+    let base_asset = &body.route.hops[0].from_asset;
+    let last_to_asset = &body.route.hops[body.route.hops.len() - 1].to_asset;
+
+    for hop in &body.route.hops {
+        let hop_slippage = routing_policy.slippage_bps_for_venue(hop.venue_ref.as_deref());
+>>>>>>> origin/main
 
         // AssetPath objects required by the quote pipeline.
         let from_asset = AssetPath::parse(&hop.source_asset).map_err(|e| {
@@ -431,6 +458,7 @@ pub fn request_route_to_swap_path(route: &RouteDryRunPath) -> Result<SwapPath> {
     })
 }
 
+<<<<<<< HEAD
 /// Stamp per-hop slippage overrides onto a [`RoutingPolicy`].
 ///
 /// The routing engine exposes per-venue filtering through the policy's
@@ -627,5 +655,59 @@ mod tests {
             }],
         );
         assert_eq!(policy.max_hops, 3);
+=======
+#[allow(dead_code)]
+fn apply_slippage_overrides_to_policy(
+    policy: &mut RoutingPolicy,
+    overrides: &[SlippageOverride],
+) {
+    policy.apply_venue_slippage_overrides(
+        overrides
+            .iter()
+            .map(|ov| (ov.venue_ref.clone(), ov.slippage_bps)),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_slippage_overrides_to_policy_merges_per_venue_bounds() {
+        let mut policy = RoutingPolicy::default().with_default_slippage_bps(50);
+        apply_slippage_overrides_to_policy(
+            &mut policy,
+            &[
+                SlippageOverride {
+                    venue_ref: "pool-a".to_string(),
+                    slippage_bps: 100,
+                },
+                SlippageOverride {
+                    venue_ref: "pool-b".to_string(),
+                    slippage_bps: 200,
+                },
+            ],
+        );
+
+        assert_eq!(policy.slippage_bps_for_venue(Some("pool-a")), 100);
+        assert_eq!(policy.slippage_bps_for_venue(Some("pool-b")), 200);
+        assert_eq!(policy.slippage_bps_for_venue(Some("pool-c")), 50);
+        assert_eq!(policy.slippage_bps_for_venue(None), 50);
+    }
+
+    #[test]
+    fn dry_run_slippage_resolution_prefers_override_then_default() {
+        let mut policy = RoutingPolicy::default().with_default_slippage_bps(75);
+        apply_slippage_overrides_to_policy(
+            &mut policy,
+            &[SlippageOverride {
+                venue_ref: "venue-1".to_string(),
+                slippage_bps: 125,
+            }],
+        );
+
+        assert_eq!(policy.slippage_bps_for_venue(Some("venue-1")), 125);
+        assert_eq!(policy.slippage_bps_for_venue(Some("venue-2")), 75);
+>>>>>>> origin/main
     }
 }
