@@ -24,8 +24,10 @@ export const Loader2 = Icon;
 export const Menu = Icon;
 export const Moon = Icon;
 export const RefreshCw = Icon;
+export const RefreshCcw = Icon;
 export const RotateCcw = Icon;
 export const Settings = Icon;
+export const Home = Icon;
 export const Sun = Icon;
 export const Trash2 = Icon;
 export const Wallet = Icon;
@@ -44,6 +46,7 @@ export const Stethoscope = Icon;
 export const History = Icon;
 export const Search = Icon;
 export const Download = Icon;
+export const Droplet = Icon;
 
 export const AlertTriangle = Icon;
 export const DollarSign = Icon;
@@ -82,3 +85,16 @@ export const Columns2 = Icon;
 export const LayoutList = Icon;
 export const Bell = Icon;
 export const BellOff = Icon;
+export const Activity = Icon;
+export const Database = Icon;
+
+// Share icon
+export const Share2 = Icon;
+
+// Split icon
+export const Split = Icon;
+
+// QuoteInspector icons
+export const ShieldCheck = Icon;
+export const Diff = Icon;
+export const Scale = Icon;
