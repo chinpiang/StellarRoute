@@ -18,6 +18,7 @@ import type {
   AccountSwitchState,
   Capabilities,
 } from '@/lib/wallet/types';
+import { STELLAR_NETWORK } from '@/lib/constants';
 
 interface WalletContextValue {
   address: string | null;
@@ -87,7 +88,7 @@ interface WalletProviderProps {
 
 export function WalletProvider({
   children,
-  defaultNetwork = 'testnet',
+  defaultNetwork = STELLAR_NETWORK,
 }: WalletProviderProps) {
   const [address, setAddress] = React.useState<string | null>(null);
   const [isConnected, setIsConnected] = React.useState(false);

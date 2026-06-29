@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { SupportedWallet, AvailableWallet } from '@/lib/wallet/types';
 import { AlertCircle, CheckCircle, Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { STELLAR_NETWORK } from '@/lib/constants';
 
 export type OnboardingStep = 'welcome' | 'select-wallet' | 'connecting' | 'success' | 'error' | 'network-mismatch';
 
@@ -27,7 +28,7 @@ export interface WalletConnectionOnboardingProps {
 }
 
 const SUPPORTED_NETWORKS = ['testnet', 'mainnet'];
-const APP_NETWORK = 'testnet';
+const APP_NETWORK = STELLAR_NETWORK;
 
 export function WalletConnectionOnboarding({
   open,
