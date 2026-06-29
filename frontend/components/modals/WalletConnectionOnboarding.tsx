@@ -18,6 +18,7 @@ import {
   type AppNetwork,
 } from '@/lib/network-policy';
 import { AlertCircle, CheckCircle, Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { STELLAR_NETWORK } from '@/lib/constants';
 
 export type OnboardingStep =
   | 'welcome'
@@ -40,10 +41,15 @@ export interface WalletConnectionOnboardingProps {
   onNetworkSelection?: (network: WalletNetwork) => void;
 }
 
+<<<<<<< HEAD
 const NETWORK_LABELS: Record<AppNetwork, string> = {
   testnet: 'Testnet',
   mainnet: 'Mainnet',
 };
+=======
+const SUPPORTED_NETWORKS = ['testnet', 'mainnet'];
+const APP_NETWORK = STELLAR_NETWORK;
+>>>>>>> origin/main
 
 export function WalletConnectionOnboarding({
   open,
@@ -286,6 +292,11 @@ export function WalletConnectionOnboarding({
                           <p className="text-sm text-muted-foreground">
                             {wallet.installed ? 'Detected on your device' : 'Not installed'}
                           </p>
+                          {wallet.id === 'xbull' && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Transaction signing is supported on testnet only.
+                            </p>
+                          )}
                         </div>
                         {!wallet.installed && (
                           <ExternalLink className="h-4 w-4 text-muted-foreground" />

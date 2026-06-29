@@ -1,29 +1,26 @@
 'use client';
 
+<<<<<<< HEAD
 import { useEffect, useState, useCallback, useMemo } from 'react';
+=======
+import { useState, useCallback, useEffect } from 'react';
+>>>>>>> origin/main
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, CheckCircle2, XCircle, AlertTriangle, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
+<<<<<<< HEAD
 import { useWallet } from '@/components/providers/wallet-provider';
 import { getApiBaseUrl } from '@/lib/network-endpoints';
+=======
+import { useHealth, useHealthDeps } from '@/hooks/useApi';
+import { getTraderErrorCopy } from '@/lib/api/trader-error-copy';
+import { STATUS_PAGE_REFRESH_MS } from '@/lib/api/client';
+>>>>>>> origin/main
 
 interface ComponentStatus {
   [key: string]: string;
-}
-
-interface HealthData {
-  status: string;
-  timestamp: string;
-  version: string;
-  components: ComponentStatus;
-}
-
-interface DependencyHealthData {
-  status: string;
-  timestamp: string;
-  components: ComponentStatus;
 }
 
 const STATUS_ICONS = {
@@ -95,6 +92,7 @@ function ComponentStatusItem({ name, status }: { name: string; status: string })
 }
 
 export function StatusDashboard() {
+<<<<<<< HEAD
   const { network } = useWallet();
   const healthBaseUrl = useMemo(() => getApiBaseUrl(network), [network]);
 
@@ -103,8 +101,12 @@ export function StatusDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+=======
+>>>>>>> origin/main
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+<<<<<<< HEAD
   const fetchStatus = useCallback(async () => {
     try {
       setError(null);
@@ -118,43 +120,55 @@ export function StatusDashboard() {
       const depsRes = await fetch(`${healthBaseUrl}/health/deps`);
       const depsJson = await depsRes.json();
       setDepsData(depsJson.data);
+=======
+  const healthIntervalMs = autoRefresh ? STATUS_PAGE_REFRESH_MS : undefined;
 
+  const {
+    data: healthData,
+    loading: healthLoading,
+    error: healthError,
+    refresh: refreshHealth,
+  } = useHealth(healthIntervalMs);
+>>>>>>> origin/main
+
+  const {
+    data: depsData,
+    loading: depsLoading,
+    error: depsError,
+    refresh: refreshDeps,
+  } = useHealthDeps(healthIntervalMs);
+
+  const loading = healthLoading || depsLoading;
+
+  useEffect(() => {
+    if (!healthLoading && !depsLoading && (healthData || depsData)) {
       setLastUpdated(new Date());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch status');
-    } finally {
-      setLoading(false);
     }
+<<<<<<< HEAD
   }, [healthBaseUrl]);
+=======
+  }, [healthLoading, depsLoading, healthData, depsData]);
+>>>>>>> origin/main
 
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  const rawError = healthError ?? depsError ?? null;
+  const errorMessage = rawError
+    ? getTraderErrorCopy(rawError).headline
+    : null;
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const interval = setInterval(() => {
-      fetchStatus();
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchStatus]);
-
-  const handleRefresh = () => {
-    setLoading(true);
-    fetchStatus();
-  };
+  const handleRefresh = useCallback(() => {
+    refreshHealth();
+    refreshDeps();
+  }, [refreshHealth, refreshDeps]);
 
   if (loading && !healthData) {
     return (
       <div className="flex items-center justify-center py-12">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        <RefreshCw data-testid="icon" className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  if (error && !healthData) {
+  if (errorMessage && !healthData) {
     return (
       <Card className="border-red-500/20 bg-red-500/5">
         <CardHeader>
@@ -162,7 +176,7 @@ export function StatusDashboard() {
             <XCircle className="h-5 w-5" />
             Connection Error
           </CardTitle>
-          <CardDescription>{error}</CardDescription>
+          <CardDescription>{errorMessage}</CardDescription>
         </CardHeader>
         <CardContent>
           <Button onClick={handleRefresh} variant="outline">
@@ -180,7 +194,6 @@ export function StatusDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Overall Status Card */}
       <Card className={cn('border-2', STATUS_BG[overallStatusKey])}>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -224,7 +237,6 @@ export function StatusDashboard() {
         </CardHeader>
       </Card>
 
-      {/* Core Components */}
       {healthData && (
         <Card>
           <CardHeader>
@@ -241,7 +253,6 @@ export function StatusDashboard() {
         </Card>
       )}
 
-      {/* Dependencies */}
       {depsData && (
         <Card>
           <CardHeader>
@@ -258,7 +269,6 @@ export function StatusDashboard() {
         </Card>
       )}
 
-      {/* Info Footer */}
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
           <div className="text-sm text-muted-foreground space-y-2">

@@ -17,6 +17,12 @@ function formatShortAddress(address: string): string {
 export function WalletButton() {
   const [showQrCode, setShowQrCode] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+<<<<<<< HEAD
+=======
+  const [walletNetworkForOnboarding, setWalletNetworkForOnboarding] = useState<
+    string | null
+  >(null);
+>>>>>>> origin/main
 
   const {
     address,
@@ -81,6 +87,7 @@ export function WalletButton() {
     return (
       <>
         <Button
+          id="wallet-button"
           onClick={() => setShowOnboardingModal(true)}
           className="min-h-[44px]"
         >

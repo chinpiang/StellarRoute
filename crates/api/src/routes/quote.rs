@@ -10,12 +10,11 @@
 //!
 //! Request logs and decision stages include matching `request_id` values.
 
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{extract::State, Json};
 use opentelemetry::trace::TraceContextExt;
 use serde_json::{Map, Value};
 use sqlx::Row;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, info_span, warn, Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -187,6 +186,8 @@ pub async fn get_quote(
         )
         .await
         {
+            Ok((prepared_quote_resp, cache_hit)) => {
+                let quote_resp = prepared_quote_resp.into_quote()?;
             Ok((prepared_quote, cache_hit)) => {
                 let quote_resp = prepared_quote.into_quote()?;
                 let error_class = "none";
@@ -505,6 +506,12 @@ pub async fn get_batch_quotes(
                 };
 
                 match get_quote_inner(state, base_asset, quote_asset, params, false).await {
+                    Ok((prepared_quote, _cache_hit)) => match prepared_quote.into_quote() {
+                        Ok(quote) => BatchQuoteItemResult::ok(i, quote),
+                        Err(e) => {
+                            let (code, message) = batch_error_from_api_error(&e);
+                            BatchQuoteItemResult::err(i, BatchItemError { code, message })
+                        }
                     Ok((quote, _cache_hit)) => match quote.into_quote() {
                         Ok(inner) => BatchQuoteItemResult::ok(i, inner),
                         Err(e) => BatchQuoteItemResult::err(

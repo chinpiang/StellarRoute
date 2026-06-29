@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { StellarRouteClient, StellarRouteApiError, isStellarRouteApiError } from './client.js';
-import type { HealthStatus, Orderbook, PairsResponse, PriceQuote } from './types.js';
+import type {
+  BatchOrderbookResponse,
+  HealthStatus,
+  Orderbook,
+  PairsResponse,
+  PriceQuote,
+} from './types.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -129,6 +135,60 @@ describe('getOrderbook', () => {
     expect((err as StellarRouteApiError).isNotFound()).toBe(true);
     expect((err as StellarRouteApiError).status).toBe(404);
     expect((err as StellarRouteApiError).code).toBe('not_found');
+  });
+});
+
+// ── getOrderbooksBatch ──────────────────────────────────────────────────────────
+
+const sampleOrderbookBatch: BatchOrderbookResponse = {
+  results: [
+    { index: 0, status: 'ok', orderbook: sampleOrderbook },
+    {
+      index: 1,
+      status: 'error',
+      error: { code: 'not_found', message: 'Asset not found in orderbook' },
+    },
+  ],
+  items_succeeded: 1,
+  items_failed: 1,
+  total: 2,
+};
+
+describe('getOrderbooksBatch', () => {
+  it('POSTs a typed payload to /api/v1/batch/orderbook', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(ok(sampleOrderbookBatch));
+    const result = await new StellarRouteClient().getOrderbooksBatch([
+      { base: 'native', quote: 'USDC' },
+      { base: 'native', quote: 'GHOST' },
+    ]);
+
+    expect(spy.mock.calls[0]?.[0]).toBe('http://localhost:8080/api/v1/batch/orderbook');
+    const init = spy.mock.calls[0]?.[1];
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(init?.body as string)).toEqual({
+      requests: [
+        { base: 'native', quote: 'USDC' },
+        { base: 'native', quote: 'GHOST' },
+      ],
+    });
+
+    expect(result.total).toBe(2);
+    expect(result.items_succeeded).toBe(1);
+    expect(result.results[0]?.orderbook?.asks[0]?.price).toBe('0.1060000');
+    expect(result.results[1]?.error?.code).toBe('not_found');
+  });
+
+  it('maps an API error to StellarRouteApiError', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      apiError('validation_error', 'Batch request must contain at least 1 item', 400),
+    );
+    const err = await new StellarRouteClient({ retries: 0 })
+      .getOrderbooksBatch([])
+      .catch((e: unknown) => e);
+
+    expect(isStellarRouteApiError(err)).toBe(true);
+    expect((err as StellarRouteApiError).status).toBe(400);
+    expect((err as StellarRouteApiError).code).toBe('validation_error');
   });
 });
 
@@ -316,6 +376,13 @@ describe('getRankedRoutes', () => {
     );
     const err = await new StellarRouteClient({ retries: 0 })
       .getRankedRoutes('native', 'GHOST')
+      .catch((e: unknown) => e);
+
+    expect(isStellarRouteApiError(err)).toBe(true);
+    expect((err as StellarRouteApiError).isNotFound()).toBe(true);
+  });
+});
+
 // ── getPriceHistory ─────────────────────────────────────────────────────────
 
 describe('getPriceHistory', () => {
