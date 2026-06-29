@@ -58,6 +58,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { IconographyLegend } from '@/components/shared/IconographyLegend';
 import {
   getSwapCardStoryPresentation,
   type SwapCardStoryFixture,
@@ -467,6 +468,7 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
     isRecovering: quote.isRecovering,
     error: quote.error,
     isOnline,
+    wsConnected: quote.wsConnected,
   });
 
   const optimistic = useOptimisticSwap({
@@ -1058,13 +1060,18 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
               <MobileRouteBottomSheet
                 quote={quote.data ?? null}
                 amountOut={selectedRoute?.expectedAmount ?? displayToAmount}
-                isLoading={displayQuoteLoading}
+                isLoading={isRoutesLoading}
               />
               {showRoutePicker && (
                 <RouteDisplay
+                  quote={quote.data ?? null}
                   amountOut={selectedRoute?.expectedAmount ?? displayToAmount}
-                  isLoading={displayQuoteLoading}
-                  onSelect={setSelectedRoute}
+                  isLoading={isRoutesLoading}
+                  alternativeRoutes={mergedAlternativeRoutes}
+                  selectedRouteId={selectedRoute?.id ?? null}
+                  onSelect={handleRouteSelect}
+                  fromAssetCode={fromSymbol}
+                  toAssetCode={toSymbol}
                 />
               )}
               {batchSwapsEnabled && (
@@ -1312,7 +1319,7 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
       </p>
 
       <Dialog open={shortcutHelpOpen} onOpenChange={handleShortcutOpenChange}>
-        <DialogContent>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('swap.shortcuts.title')}</DialogTitle>
           </DialogHeader>
@@ -1338,6 +1345,7 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
               <kbd className="font-mono">Alt+2</kbd>
             </li>
           </ul>
+          <IconographyLegend embedded className="mt-4" />
         </DialogContent>
       </Dialog>
     </div>

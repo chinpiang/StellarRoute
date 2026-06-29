@@ -9,23 +9,11 @@ import { Button } from '@/components/ui/button';
 import { WalletButton } from '@/components/shared/wallet-button';
 import { NetworkBadge } from '@/components/shared/network-badge';
 import { MobileNav } from './mobile-nav';
+import { getNavItems } from './nav-items';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '../ThemeToggle';
+import { useFeatureFlag } from '@/hooks/useFeatureFlag';
 
-interface NavItem {
-  label: string;
-  href: string;
-  disabled?: boolean;
-}
-
-const navItems: NavItem[] = [
-  { label: 'Swap', href: '/swap' },
-  { label: 'Orderbook', href: '/orderbook' },
-  { label: 'History', href: '/history' },
-  // Future routes - disabled for now
-  // { label: "Analytics", href: "/analytics", disabled: true },
-  // { label: "Docs", href: "/docs", disabled: true },
-];
 
 /**
  * Main header/navbar component
@@ -42,6 +30,12 @@ const navItems: NavItem[] = [
 export function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const { enabled: analyticsEnabled } = useFeatureFlag('analytics');
+  const navItems = React.useMemo(
+    () => getNavItems({ analyticsEnabled }),
+    [analyticsEnabled],
+  );
+
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
