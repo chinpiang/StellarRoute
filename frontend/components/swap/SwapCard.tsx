@@ -468,6 +468,7 @@ export function SwapCard({ storyFixture, showRoutePicker = false }: SwapCardProp
     isRecovering: quote.isRecovering,
     error: quote.error,
     isOnline,
+    wsConnected: quote.wsConnected,
   });
 
   const optimistic = useOptimisticSwap({
