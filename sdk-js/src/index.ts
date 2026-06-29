@@ -52,6 +52,12 @@ export type {
   RankedRouteHop,
   RankedRoutesResponse,
   TradingPair,
+  QuoteRequestItem,
+  BatchQuoteResponse,
+  OrderbookRequestItem,
+  BatchOrderbookResponse,
+  BatchOrderbookItemResult,
+  BatchItemError,
 } from './types.js';
 
 export {

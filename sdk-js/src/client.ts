@@ -345,7 +345,28 @@ export class StellarRouteClient {
       signal,
       this.retries,
       'POST',
-      requests,
+      { quotes: requests },
+    );
+  }
+
+  /**
+   * `POST /api/v1/batch/orderbook` — fetch multiple orderbooks in a single request.
+   *
+   * @param requests Array of orderbook requests to fetch.
+   *
+   * @throws {@link StellarRouteApiError} when the batch request fails.
+   */
+  async getOrderbooksBatch(
+    requests: OrderbookRequestItem[],
+    signal?: AbortSignal,
+  ): Promise<BatchOrderbookResponse> {
+    const path = '/api/v1/batch/orderbook';
+    return this.request<BatchOrderbookResponse>(
+      path,
+      signal,
+      this.retries,
+      'POST',
+      { requests },
     );
   }
 
