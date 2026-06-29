@@ -270,29 +270,8 @@ export async function checkAddressChange(
     }
 
     if (walletId === "xbull") {
-      // xBull exposes the active account via window.xbull.getPublicKey()
-      // when available; fall back to a silent connect() probe if needed.
-      const xbull = (window as unknown as Record<string, unknown>).xbull as
-        | {
-            getPublicKey?: () => Promise<string>;
-            connect: () => Promise<{ publicKey: string }>;
-          }
-        | undefined;
-
-      if (!xbull) return null;
-
-      let newAddress: string | null = null;
-
-      if (typeof xbull.getPublicKey === "function") {
-        // Preferred: non-interactive passive read
-        newAddress = await xbull.getPublicKey();
-      } else {
-        // Fallback: silent reconnect (may show extension UI on some builds)
-        const result = await xbull.connect();
-        newAddress = result.publicKey;
-      }
-
-      return newAddress && newAddress !== currentAddress ? newAddress : null;
+      // xBull doesn't have a passive address check, would need to reconnect
+      return null;
     }
   } catch {
     return null;

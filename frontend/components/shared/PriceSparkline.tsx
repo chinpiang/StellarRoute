@@ -11,25 +11,6 @@ export type PricePoint = {
 export type SparklineRange = "1h" | "24h" | "7d";
 export type RangeDataMap = Partial<Record<SparklineRange, PricePoint[]>>;
 
- main
-export default function PriceSparkline({ data }: Props) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const displayData = useMemo(() => data ?? [], [data]);
-
-  // ✅ Limit points for performance
-  const sliced = useMemo(() => displayData.slice(-50), [displayData]);
-
-  const { points, normalized } = useMemo(() => {
-    if (sliced.length === 0) {
-      return { points: "", normalized: [] as Array<PricePoint & { x: number; y: number }> };
-    }
-
-interface Props {
-  /**
-   * Pre-fetched price data keyed by range.
-   * Pass `undefined` (or omit a key) to indicate data is still loading for
-   * that range. Pass an empty array `[]` to indicate no data available.
-   */
 export type PriceSparklineProps = {
   rangeData?: RangeDataMap;
   loadingRanges?: Set<SparklineRange>;
@@ -73,7 +54,6 @@ export default function PriceSparkline({
   const sliced = useMemo(() => currentData.slice(-50), [currentData]);
 
   const { points, normalized } = useMemo(() => {
- main
     if (sliced.length === 0) {
       return { points: "", normalized: [] as Array<PricePoint & { x: number; y: number }> };
     }
@@ -92,14 +72,6 @@ export default function PriceSparkline({
 
     return { points, normalized };
   }, [sliced]);
-
-  if (sliced.length === 0) {
-    return (
-      <div className="text-xs text-muted-foreground">
-        No price data (24h)
-      </div>
-    );
-  }
 
   return (
     <div className="w-full flex flex-col gap-2">
